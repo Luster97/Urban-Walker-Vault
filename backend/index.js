@@ -1,4 +1,4 @@
-import sqlite3 from "sqlite3";
+process.env.USE_SQLITE = "false";
 import { Pool } from "pg";
 import express from "express";
 import cors from "cors";
