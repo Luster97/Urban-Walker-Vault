@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Urban Walker Vault</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/x-icon" href="Urban_Walker_Favicon.ico?v=2">
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        .dashboard-container {
+            padding: 20px;
+            max-width: 1200px;
+            margin: auto;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+        .stat-number {
+            font-size: 2rem;
+            color: #0a84ff;
+            font-weight: bold;
+        }
+        .chart-box {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 40px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>Urban Walker Vault</h1>
+    <nav>
+        <ul>
+            <li><a href="dashboard.html" class="active">Dashboard</a></li>
+            <li><a href="admin.html">Inventory</a></li>
+            <li><a href="staff.html">Staff</a></li>
+            <li><a href="purchase-history.html">Purchases</a></li>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="signin.html">Sign Out</a></li>
+        </ul>
+    </nav>
+</header>
+
+<main class="dashboard-container">
+
+    <h1>Admin Dashboard</h1>
+
+    <!-- Stats -->
+    <section class="stats-grid">
+        <div class="stat-card">
+            <h3>Total Users</h3>
+            <div id="totalUsers" class="stat-number">0</div>
+        </div>
+
+        <div class="stat-card">
+            <h3>Total Staff</h3>
+            <div id="totalStaff" class="stat-number">0</div>
+        </div>
+
+        <div class="stat-card">
+            <h3>Total Products</h3>
+            <div id="totalProducts" class="stat-number">0</div>
+        </div>
+
+        <div class="stat-card">
+            <h3>Total Revenue</h3>
+            <div id="totalRevenue" class="stat-number">R 0.00</div>
+        </div>
+    </section>
+
+    <!-- Chart -->
+    <div class="chart-box">
+        <h2>Daily Revenue (Last 7 Days)</h2>
+        <canvas id="dailyRevenueChart"></canvas>
+    </div>
+
+</main>
+
+<script>
+const API_BASE = "http://localhost:3001/api";
+
+async function fetchJSON(url) {
+    const res = await fetch(url);
+    return res.json();
+}
+
+async function loadDashboard() {
+    try {
+        //  Fetch all stats from backend
+        const users = await fetchJSON(`${API_BASE}/stats/users`);
+        const staff = await fetchJSON(`${API_BASE}/stats/staff`);
+        const products = await fetchJSON(`${API_BASE}/stats/products`);
+        const revenue = await fetchJSON(`${API_BASE}/stats/revenue`);
+        const dailySales = await fetchJSON(`${API_BASE}/sales/daily`);
+
+        //  Display counts
+        document.getElementById("totalUsers").textContent = users.total;
+        document.getElementById("totalStaff").textContent = staff.total;
+        document.getElementById("totalProducts").textContent = products.total;
+        document.getElementById("totalRevenue").textContent = "R " + revenue.total;
+
+        //  Build revenue chart
+        const labels = dailySales.map(r => r.day);
+        const values = dailySales.map(r => r.total);
+
+        const ctx = document.getElementById("dailyRevenueChart");
+
+        new Chart(ctx, {
+            type: "line",
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: "Daily Revenue",
+                    data: values,
+                    borderWidth: 3,
+                    fill: false
+                }]
+            }
+        });
+    } catch (err) {
+        console.error("Dashboard load error:", err);
+    }
+}
+
+//  Load everything on page ready
+document.addEventListener("DOMContentLoaded", loadDashboard);
+</script>
+
+
+</body>
+</html>
+

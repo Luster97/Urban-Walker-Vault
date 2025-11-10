@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Purchase History - Urban Walker Vault</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/x-icon" href="Urban_Walker_Favicon.ico?v=2">
+</head>
+<body>
+    
+    <header>
+        <hi>Purchase History</hi>
+        <nav>
+            <ul>
+                <li><a href="#" onClick="signOut()">Sign Out</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main class="dashboard-page">
+        <h2>All Completed Purchases</h2>
+        <table id="purchaseTable">
+            <thead>
+                <tr>
+                    <th>Date & Time</th>
+                    <th>User</th>
+                    <th>Items</th>
+                    <th>Description</th>
+                    <th>Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Purchase records will be dynamically inserted here -->
+            </tbody>
+        </table>
+    </main>
+
+    <footer>
+        <p>© 2025 Urban Walker Vault. All rights reserved.</p>
+    </footer>
+
+    <script src="admin.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

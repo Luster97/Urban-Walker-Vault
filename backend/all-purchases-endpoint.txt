@@ -1,0 +1,17 @@
+// Add this new endpoint to your backend index.js to allow admin to fetch all purchases with user info
+import express from 'express';
+import sqlite3 from 'sqlite3';
+import { open } from 'sqlite';
+// ...existing imports and setup...
+
+// Add this route after your other endpoints in index.js
+app.get('/api/purchase', async (req, res) => {
+  // Join with users table to get username/email for each purchase
+  const purchases = await db.all(`
+    SELECT purchases.*, users.username, users.email
+    FROM purchases
+    JOIN users ON purchases.user_id = users.id
+    ORDER BY purchases.date DESC
+  `);
+  res.json(purchases);
+});

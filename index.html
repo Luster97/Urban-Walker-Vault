@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Urban Walker Vault</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/x-icon" href="Urban_Walker_Favicon.ico?v=2">
+</head>
+<body>
+
+    <!-- HEADER -->
+    <header>
+        <h1>Urban Walker Vault</h1>
+        <nav>
+            <ul>
+                <li><a href="index.html" class="active">Home</a></li>
+                <li><a href="location.html">Location</a></li>
+                <li><a href="contact.html">Contact</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <!-- HERO SECTION -->
+    <main>
+        <section class="hero clean-hero">
+            <h2>Step Into Sneaker Greatness</h2>
+            <p>
+                Discover the hottest drops, rare finds, and timeless classics at Urban Walker Vault.
+                Your journey to sneaker perfection starts here.
+            </p>
+            <button class="btn-primary" id="shopNowBtn">Shop Now</button>
+        </section>
+
+        <!-- FEATURED SNEAKERS -->
+        <section class="featured-sneakers">
+            <h2 class="section-title-centered">Featured Sneakers</h2>
+            <div class="featured-grid" id="featuredGrid">
+                <!-- Sneakers added by admin will be injected here by script.js -->
+            </div>
+
+            <p id="featuredEmptyMsg" class="empty-msg" style="display:none;">
+                No featured sneakers available yet.
+            </p>
+        </section>
+
+        <!-- AUTH BUTTONS -->
+        <section class="auth-buttons">
+            <button class="btn-secondary" id="signInBtn">Sign In</button>
+            <button class="btn-primary" id="registerBtn">Register</button>
+        </section>
+    </main>
+
+    <!-- FOOTER -->
+    <footer>
+        <p>© 2025 Urban Walker Vault. All rights reserved.</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

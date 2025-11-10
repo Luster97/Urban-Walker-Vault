@@ -1,0 +1,16 @@
+# Node modules
+node_modules/
+backend/node_modules/
+
+# Environment vars
+.env
+
+# SQLite databases
+*.db
+*.db.bak
+
+# Backup folder
+backup/
+
+# VS Code settings
+.vscode/

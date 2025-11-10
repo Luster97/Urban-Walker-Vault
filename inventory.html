@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory - Urban Walker Vault</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/x-icon" href="Urban_Walker_Favicon.ico?v=2">
+</head>
+<body>
+    
+    <!--Header-->
+    <header>
+        <h1>Urban Walker Vault</h1>
+        <nav>
+            <ul>
+                <li><a href="index.html">Home</a></li>
+                <li><a href="location.html">Location</a></li>
+                <li><a href="contact.html">Contact</a></li>
+                <l1><a href="signin.html">Sign Out</a></l1>
+            </ul>
+        </nav>
+    </header>
+
+    <!--Inventory Grid-->
+    <main class="inventory-page">
+        <!-- Checkout Tab for Users -->
+        <div id="checkoutTab" style="
+    display:none;
+    position:fixed;
+    top:30px;
+    right:30px;
+    z-index:1000;
+    background:#fff;
+    border-radius:18px;
+    box-shadow:0 4px 16px rgba(0,0,0,0.15);
+    padding:18px 20px;
+    width:260px;
+    font-family:Arial, sans-serif;
+">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="font-size:1.1em;font-weight:bold;">Your Cart</div>
+        <span id="cartCount" style="
+            background:#111;
+            color:#fff;
+            border-radius:50%;
+            width:28px;
+            height:28px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-size:0.9em;
+            font-weight:bold;
+        ">0</span>
+    </div>
+
+    <ul id="cartList" style="
+        list-style:none;
+        padding:0;
+        margin:0 0 10px 0;
+        max-height:200px;
+        overflow-y:auto;
+    "></ul>
+
+    <div style="border-top:1px solid #ddd;padding-top:10px;margin-top:10px;display:flex;justify-content:space-between;font-weight:bold;">
+        <span>Total:</span> R<span id="totalPrice">0.00</span>
+    </div>
+
+    <button id="checkoutBtn" style="
+        background:#222;
+        color:#fff;
+        width:100%;
+        border:none;
+        border-radius:8px;
+        padding:10px 0;
+        margin-top:12px;
+        cursor:pointer;
+        font-size:1em;
+        font-weight:bold;
+    ">Checkout</button>
+</div>
+    <h2>Our Sneaker Collection</h2>
+    <div id="adminIndicator" style="display:none;color:#c00;font-weight:bold;margin-bottom:10px;">ADMIN MODE: You can edit or delete sneakers.</div>
+        <div class="card-grid" id="inventoryGrid">
+            <!-- Cards will be rendered by script.js -->
+        </div>
+        <!-- Edit Sneaker Modal (hidden by default) -->
+        <div id="editSneakerModal" class="modal" style="display:none;">
+            <div class="modal-content">
+                <span class="close" id="closeEditModal">&times;</span>
+                <h3>Edit Sneaker</h3>
+                <form id="editSneakerForm">
+                    <input type="hidden" id="editSneakerId">
+                    <label for="editSneakerName">Name:</label>
+                    <input type="text" id="editSneakerName" required>
+                    <label for="editSneakerPrice">Price (R):</label>
+                    <input type="number" id="editSneakerPrice" required>
+                    <label for="editSneakerQty">Quantity:</label>
+                    <input type="number" id="editSneakerQty" required>
+                    <label for="editSneakerImage">Image URL:</label>
+                    <input type="url" id="editSneakerImage" required>
+                    <label for="editSneakerDesc">Description:</label>
+                    <textarea id="editSneakerDesc" required></textarea>
+                    <button type="submit">Save Changes</button>
+                </form>
+            </div>
+        </div>
+        <!-- DELETE CONFIRMATION MODAL -->
+        <div id="deleteConfirmModal" class="modal" style="display:none;">
+            <div class="modal-content">
+                <h3>Delete Sneaker</h3>
+                <p>Are you sure you want to delete this sneaker?</p>
+
+                <div style="margin-top: 15px;">
+                    <button id="confirmDeleteBtn" class="confirm-btn">Yes, Delete</button>
+                    <button id="cancelDeleteBtn" class="cancel-btn">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Product Detail Modal -->
+        <div id="productModal" class="modal" style="display:none;">
+            <div class="modal-content product-modal-content">
+                <span class="close" id="closeProductModal">&times;</span>
+                <div id="productBody">
+                    <img id="productImage" src="" alt="" style="width:200px;height:200px;object-fit:cover;border-radius:10px;display:block;margin:0 auto 1rem;">
+                    <h3 id="productName"></h3>
+                    <p id="productDesc"></p>
+                    <p id="productPrice" style="font-weight:bold;"></p>
+                    <label for="productSize">Size:</label>
+                    <select id="productSize" style="margin-bottom:0.6rem;display:block;width:100%;max-width:160px;margin-left:auto;margin-right:auto;">
+                        <option value="6">6</option>
+                        <option value="7">7</option>
+                        <option value="8">8</option>
+                        <option value="9">9</option>
+                        <option value="10">10</option>
+                        <option value="11">11</option>
+                        <option value="12">12</option>
+                    </select>
+                    <label for="productQty">Quantity:</label>
+                    <input id="productQty" type="number" min="1" max="10" value="1" style="width:80px;margin:0.4rem auto 0.8rem;display:block;text-align:center;">
+                    <div style="display:flex;gap:8px;justify-content:center;margin-top:0.6rem;">
+                      <button id="productAddToCart" style="background:#111;color:#fff;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;">Add to Cart</button>
+                      <button id="productBuyNow" style="background:#ff5a36;color:#fff;border:none;padding:8px 14px;border-radius:6px;cursor:pointer;">Buy Now</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!--Footer-->
+    <footer>
+        <p>© 2025 Urban Walker Vault. All rights reserved.</p>
+    </footer>
+    <script src="script.js"></script>
+</body>
+</html>

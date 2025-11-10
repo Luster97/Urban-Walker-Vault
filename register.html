@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - Urban Walker Vault</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/x-icon" href="Urban_Walker_Favicon.ico?v=2">
+</head>
+<body>
+
+    <!-- HEADER -->
+    <header>
+        <h1>Urban Walker Vault</h1>
+        <nav>
+            <ul>
+                <li><a href="index.html">Home</a></li>
+                <li><a href="location.html">Location</a></li>
+                <li><a href="contact.html">Contact</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <!-- REGISTER FORM -->
+    <main class="form-page">
+        <h2>Register</h2>
+        <form id="registerForm">
+
+            <label for="username">Username:</label>
+            <input type="text" id="username" required>
+
+            <label for="email">Email:</label>
+            <input type="email" id="email" required>
+
+            <label for="password">Password:</label>
+            <input type="password" id="password" required>
+
+            <label for="confirmPassword">Confirm Password:</label>
+            <input type="password" id="confirmPassword" required>
+
+            <!-- Hidden role -->
+            <input type="hidden" id="role" value="user">
+
+            <!-- reCAPTCHA token -->
+            <input type="hidden" id="recaptchaToken" name="recaptchaToken">
+
+            <button id="registerSubmit" type="submit" class="btn-primary">Register</button>
+        </form>
+
+        <p style="margin-top: 1rem;">Already have an account? 
+            <a href="signin.html" class="text-link">Sign in here</a>
+        </p>
+    </main>
+
+    <!-- FOOTER -->
+    <footer>
+        <p>© 2025 Urban Walker Vault. All rights reserved.</p>
+    </footer>
+
+    <script src="script.js"></script>
+
+    <!-- Google reCAPTCHA v3 (Replace SITE_KEY with your own key) -->
+    <script src="https://www.google.com/recaptcha/api.js?render=REPLACE_WITH_YOUR_SITE_KEY"></script>
+
+</body>
+</html>

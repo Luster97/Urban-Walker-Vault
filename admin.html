@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Urban Walker Vault</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/x-icon" href="Urban_Walker_Favicon.ico?v=2">
+</head>
+<body>
+   
+    <header>
+        <h1>Admin Panel</h1>
+        <nav>
+            <ul>
+                
+                <li><a href="staff.html">Staff</a></li>
+                <li><a href="admin.html">Inventory</a></li>
+                <li><a href="purchase-history.html">Purchases</a></li>
+                <li><a href="signin.html">Sign Out</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main class="form-page">
+        <h2>Add New Sneaker</h2>
+        <form id="sneakerForm">
+            <label for="sneakerName">Name:</label>
+            <input type="text" id="sneakerName" required>
+
+            <label for="sneakerImage">Image URL:</label>
+            <input type="url" id="sneakerImage" required>
+
+            <label for="sneakerPrice">Price (R):</label>
+            <input type="number" id="sneakerPrice" required>
+
+            <label for="sneakerQty">Quantity:</label>
+            <input type="number" id="sneakerQty" required value="0" min="0">
+
+            <label for="sneakerDesc">Description:</label>
+            <textarea id="sneakerDesc" required></textarea>
+
+            <button type="submit">Add Sneaker</button>
+        </form>
+
+        <h2>Manage Inventory</h2>
+        <table id="sneakerTable">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th>Price (R)</th>
+                    <th>Quantity</th>
+                    <th>Options</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Sneakers will be dynamically inserted here -->
+            </tbody>
+        </table>
+
+    </main>
+
+    <footer>
+        <p>© 2025 Urban Walker Vault. All rights reserved.</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
