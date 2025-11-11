@@ -25,10 +25,6 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// File path helpers (for static files)
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const FRONTEND_PATH = path.join(__dirname, "..");
 
 // ----------------------------
 //   Middleware
@@ -175,14 +171,6 @@ app.post("/api/purchase", async (req, res) => {
 });
 
 // ----------------------------
-//   Static Frontend
-// ----------------------------
-app.use(express.static(FRONTEND_PATH));
-
-//  Catch-all AFTER API routes
-app.get("*", (_, res) => {
-    res.sendFile(path.join(FRONTEND_PATH, "index.html"));
-});
 
 // ----------------------------
 //   Server Start

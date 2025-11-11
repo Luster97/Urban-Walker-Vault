@@ -1,1030 +1,520 @@
-// --------------------------- Configuration ---------------------------
-const API_BASE = (typeof window !== 'undefined' && (
-    window.location.protocol === 'file:' || /localhost|127\.0\.0\.1/.test(window.location.hostname)
-)) ? 'http://localhost:3001/api' : '/api';
+const API_BASE = "https://urban-walker-vault-1.onrender.com/api"
 
-// --------------------------- Utilities & Helpers ---------------------------
-const _ = {
-    // robust fetchJson tolerant of empty or non-JSON responses
-    fetchJson: async (url, opts = {}) => {
-        const headers = opts.headers || {};
-        if (opts.body && !headers['Content-Type'] && !(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
-        opts.headers = headers;
-        const res = await fetch(url, opts);
-        const text = await res.text();
-        if (!text) {
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            return {};
-        }
-        try {
-            const parsed = JSON.parse(text);
-            if (!res.ok) throw new Error(parsed?.error || `HTTP ${res.status}`);
-            return parsed;
-        } catch (e) {
-            if (!res.ok) throw new Error(`HTTP ${res.status}: ${text}`);
-            return text;
-        }
-    },
-    safeParse: (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
-    save: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { console.warn('ls set failed', e); } },
-    groupCart: (list = []) => Object.values((list || []).reduce((acc, it) => {
-        const key = `${it.id}::${it.size || ''}`;
-        if (!acc[key]) acc[key] = { id: it.id, name: it.name, price: it.price, image: it.image, size: it.size || '', qty: 0, desc: it.desc || '' };
-        acc[key].qty += Number(it.qty || 1);
-        return acc;
-    }, {})),
+// Use localhost for dev if running from localhost
+//const API_BASE = (/localhost|127\.0\.0\.1/.test(location.hostname)) ? "http://localhost:3001/api" : RENDER_BASE;
+
+/* ---------- Utilities ---------- */
+const utils = {
+  token() { return localStorage.getItem("token"); },
+  setSession(token, user) {
+    if (token) localStorage.setItem("token", token);
+    if (user) localStorage.setItem("currentUser", JSON.stringify(user));
+  },
+  clearSession() {
+    localStorage.removeItem("token");
+    localStorage.removeItem("currentUser");
+  },
+  currentUser() {
+    try { return JSON.parse(localStorage.getItem("currentUser")); } catch { return null; }
+  },
+  fetchJson: async (url, opts = {}) => {
+    opts.headers = opts.headers || {};
+    if (opts.body && !(opts.body instanceof FormData) && !opts.headers['Content-Type']) {
+      opts.headers['Content-Type'] = 'application/json';
+    }
+    // attach jwt if present
+    const token = utils.token();
+    if (token) opts.headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(url, opts);
+    const text = await res.text();
+    if (!text) {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return {};
+    }
+    try {
+      const json = JSON.parse(text);
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      return json;
+    } catch (e) {
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${text}`);
+      return text;
+    }
+  },
+  showMessage(msg, type = 'info', duration = 3000) {
+    try {
+      const el = document.createElement('div');
+      el.className = `site-message ${type}`;
+      el.textContent = msg;
+      Object.assign(el.style, {
+        position: 'fixed', right: '16px', bottom: '16px', padding: '10px 14px',
+        borderRadius: '8px', zIndex: 9999, fontFamily: 'sans-serif'
+      });
+      if (type === 'error') el.style.background = '#fdecea';
+      else if (type === 'success') el.style.background = '#e6ffed';
+      else el.style.background = '#eef2ff';
+      document.body.appendChild(el);
+      setTimeout(()=> el.remove(), duration);
+    } catch (e) { console.warn(e); }
+  }
 };
 
-// --------------------------- UI Feedback Helpers ---------------------------
-function showMessage(message, type = 'info', duration = 3000) {
-    try {
-        const container = document.body;
-        const messageEl = document.createElement('div');
-        messageEl.className = `message ${type}`;
-        messageEl.textContent = message;
-        // lightweight inline styling so messages are visible
-        messageEl.style.position = 'fixed';
-        messageEl.style.right = '16px';
-        messageEl.style.bottom = '16px';
-        messageEl.style.padding = '10px 14px';
-        messageEl.style.borderRadius = '8px';
-        messageEl.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12)';
-        messageEl.style.zIndex = '9999';
-        messageEl.style.fontFamily = 'sans-serif';
-        if (type === 'error') messageEl.style.background = '#fdecea';
-        else if (type === 'success') messageEl.style.background = '#e6ffed';
-        else messageEl.style.background = '#eef2ff';
-        container.appendChild(messageEl);
-        setTimeout(() => {
-            try { messageEl.remove(); } catch (e) {}
-        }, duration);
-    } catch (e) {
-        console.warn('showMessage failed', e);
-    }
+/* ---------- Cart helpers (localStorage only) ---------- */
+const cart = {
+  key: 'uwv_cart_v1',
+  get() { return JSON.parse(localStorage.getItem(this.key) || '[]'); },
+  save(items) { localStorage.setItem(this.key, JSON.stringify(items)); window.dispatchEvent(new Event('cartUpdated')); },
+  add(item) {
+    const list = this.get();
+    list.push(item);
+    this.save(list);
+  },
+  clear() { localStorage.removeItem(this.key); window.dispatchEvent(new Event('cartUpdated')); }
+};
+
+/* ---------- Auth helpers ---------- */
+function requireAuth(redirect = true, role = null) {
+  const u = utils.currentUser();
+  if (!u) {
+    if (redirect) location.href = 'signin.html';
+    return false;
+  }
+  if (role && u.role !== role) {
+    alert('Access denied'); location.href = 'inventory.html'; return false;
+  }
+  return true;
 }
 
-function showLoading(selector) {
-    const el = document.querySelector(selector);
-    if (!el) return;
-    const skeleton = document.createElement('div');
-    skeleton.className = 'skeleton';
-    skeleton.style.height = el.offsetHeight + 'px';
-    el.innerHTML = '';
-    el.appendChild(skeleton);
-}
-function hideLoading(selector) {
-    const el = document.querySelector(selector);
-    if (el && el.querySelector('.skeleton')) el.innerHTML = '';
-}
-
-// --------------------------- Auth helpers ---------------------------
-function checkAuth(role) {
-    const u = _.safeParse('currentUser');
-    if (!u) {
-        if (!/signin.html|register.html$/.test(window.location.pathname)) window.location.href = 'signin.html';
-        return false;
-    }
-    if (role && u.role !== role) {
-        alert('Access denied');
-        window.location.href = 'inventory.html';
-        return false;
-    }
-    return true;
-}
 function signOut() {
-    localStorage.removeItem('currentUser');
-    localStorage.removeItem('token');
-    window.location.href = 'signin.html';
+  utils.clearSession();
+  location.href = 'signin.html';
 }
 
-// --------------------------- Auth forms (signin/register) ---------------------------
-// sign-in & register handler
+/* ---------- Auth forms wiring ---------- */
 document.addEventListener('submit', async (ev) => {
-    const form = ev.target;
-
-    if (form.id === 'signInForm') {
-        ev.preventDefault();
-        const email = form.querySelector('#email').value;
-        const password = form.querySelector('#password').value;
-        try {
-            const res = await fetch(`${API_BASE}/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Login failed');
-            localStorage.setItem('token', data.token);
-            localStorage.setItem('currentUser', JSON.stringify(data.user));
-            const next = new URLSearchParams(window.location.search).get('next');
-            window.location.href = next ? decodeURIComponent(next) : (data.user.role === 'admin' ? 'admin.html' : 'inventory.html');
-        } catch (err) { alert(err.message || err); }
-        return;
+  const form = ev.target;
+  if (form.id === 'signInForm') {
+    ev.preventDefault();
+    const email = form.querySelector('#email')?.value;
+    const password = form.querySelector('#password')?.value;
+    try {
+      const data = await utils.fetchJson(`${API_BASE}/login`, { method: 'POST', body: JSON.stringify({ email, password }) });
+      utils.setSession(data.token, data.user);
+      const next = new URLSearchParams(location.search).get('next');
+      location.href = next ? decodeURIComponent(next) : (data.user.role === 'admin' ? 'admin.html' : 'inventory.html');
+    } catch (err) {
+      utils.showMessage(err.message || 'Login failed', 'error', 5000);
     }
+  }
 
-    if (form.id === 'registerForm') {
-        ev.preventDefault();
-        const username = form.querySelector('#username').value;
-        const email = form.querySelector('#email').value;
-        const password = form.querySelector('#password').value;
-        const confirm = form.querySelector('#confirmPassword') ? form.querySelector('#confirmPassword').value : password;
-        const role = form.querySelector('#role') ? form.querySelector('#role').value : 'user';
-        if (password !== confirm) return alert('Passwords do not match');
-
-        async function sendRegistration(recaptchaToken = null) {
-            try {
-                const res = await fetch(`${API_BASE}/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, email, password, role, recaptchaToken }) });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error || 'Registration failed');
-                alert('Registered — please sign in');
-                window.location.href = 'signin.html';
-            } catch (err) { alert(err.message || err); }
-        }
-
-        const SITE_KEY = 'REPLACE_WITH_YOUR_SITE_KEY';
-        if (window.grecaptcha && SITE_KEY !== 'REPLACE_WITH_YOUR_SITE_KEY') {
-            try {
-                const token = await grecaptcha.execute(SITE_KEY, { action: 'register' });
-                await sendRegistration(token);
-            } catch (e) { alert('reCAPTCHA failed'); }
-        } else {
-            await sendRegistration(null);
-        }
-        return;
+  if (form.id === 'registerForm') {
+    ev.preventDefault();
+    const username = form.querySelector('#username')?.value;
+    const email = form.querySelector('#email')?.value;
+    const password = form.querySelector('#password')?.value;
+    const confirm = form.querySelector('#confirmPassword')?.value || password;
+    const role = form.querySelector('#role')?.value || 'user';
+    if (password !== confirm) return utils.showMessage('Passwords do not match', 'error');
+    try {
+      await utils.fetchJson(`${API_BASE}/register`, { method: 'POST', body: JSON.stringify({ username, email, password, role }) });
+      utils.showMessage('Registered — please sign in', 'success');
+      setTimeout(()=> location.href = 'signin.html', 1000);
+    } catch (err) {
+      utils.showMessage(err.message || 'Register failed', 'error', 5000);
     }
+  }
 });
 
-// --------------------------- Small UI helpers ---------------------------
-function applyCartVisibilityByRole() {
-    const user = _.safeParse('currentUser') || null;
-    if (user && (user.role === 'admin' || user.role === 'staff')) {
-        document.body.classList.add('admin-cart-disabled');
-    } else {
-        document.body.classList.remove('admin-cart-disabled');
-    }
-}
-applyCartVisibilityByRole();
-
-function updateCartCount() {
-    const cart = JSON.parse(localStorage.getItem('cart')) || [];
-    const el = document.getElementById('cartCount');
-    if (el) el.textContent = cart.length;
+/* ---------- Load sneakers (inventory) ---------- */
+async function fetchSneakers() {
+  try {
+    return await utils.fetchJson(`${API_BASE}/sneakers`);
+  } catch (err) {
+    console.warn('fetchSneakers failed', err);
+    return [];
+  }
 }
 
-// --------------------------- Cart (grouped) ---------------------------
-function renderCart() {
-    const cartList = document.getElementById('cartList'); if (!cartList) return;
-    const totalEl = document.getElementById('totalPrice');
-    const checkoutBtn = document.getElementById('checkoutBtn') || document.getElementById('checkoutButton');
-    const cart = JSON.parse(localStorage.getItem('cart')) || [];
-    const grouped = _.groupCart(cart);
-    cartList.innerHTML = '';
-    if (!grouped.length) {
-        if (checkoutBtn) checkoutBtn.style.display = 'none';
-        if (totalEl) totalEl.textContent = '0.00';
-        cartList.innerHTML = '<p>Your cart is empty</p>';
-        return;
-    }
-    if (checkoutBtn) checkoutBtn.style.display = '';
-    let total = 0;
-    grouped.forEach(it => {
-        total += Number(it.price || 0) * Number(it.qty || 0);
-        const li = document.createElement('li');
-        li.className = 'cart-item';
-        li.innerHTML = `
-            <div class="cart-item-left">
-                <img src="${it.image || ''}" alt="${it.name || ''}" />
-                <div>
-                    <div class="cart-item-name">${it.name}</div>
-                    ${it.size ? `<div class="cart-item-size">Size: ${it.size}</div>` : ''}
-                </div>
-            </div>
-            <div class="cart-item-right">
-                <div class="cart-item-qty">
-                    <button data-key="${it.id}::${it.size || ''}" class="qty-decrease">-</button>
-                    <span class="qty-count">${it.qty}</span>
-                    <button data-key="${it.id}::${it.size || ''}" class="qty-increase">+</button>
-                </div>
-                <div class="cart-item-remove"><button data-key="${it.id}::${it.size || ''}" class="remove-item">Remove</button></div>
-            </div>`;
-        cartList.appendChild(li);
-    });
-    if (totalEl) totalEl.textContent = total.toFixed(2);
-    cartList.querySelectorAll('.qty-decrease').forEach(b => b.addEventListener('click', () => changeQty(b.dataset.key, -1)));
-    cartList.querySelectorAll('.qty-increase').forEach(b => b.addEventListener('click', () => changeQty(b.dataset.key, +1)));
-    cartList.querySelectorAll('.remove-item').forEach(b => b.addEventListener('click', () => removeGroupedItem(b.dataset.key)));
-}
-
-function changeQty(key, delta) {
-    let list = JSON.parse(localStorage.getItem('cart')) || [];
-    const grouped = _.groupCart(list);
-    const target = grouped.find(g => `${g.id}::${g.size}` === key);
-    if (!target) return;
-    const newQty = Math.max(0, target.qty + delta);
-    list = list.filter(i => `${i.id}::${i.size || ''}` !== key);
-    for (let i = 0; i < newQty; i++) list.push({ id: target.id, name: target.name, desc: target.desc, price: target.price, image: target.image, size: target.size, qty: 1 });
-    localStorage.setItem('cart', JSON.stringify(list));
-    window.dispatchEvent(new Event('cartUpdated'));
-    renderCart();
-}
-function removeGroupedItem(key) {
-    let list = JSON.parse(localStorage.getItem('cart')) || [];
-    list = list.filter(i => `${i.id}::${i.size || ''}` !== key);
-    localStorage.setItem('cart', JSON.stringify(list));
-    window.dispatchEvent(new Event('cartUpdated'));
-    renderCart();
-}
-
-// --------------------------- Checkout (fixed) ---------------------------
-async function doCheckout() {
-    const user = _.safeParse('currentUser');
-    if (!user) return alert('You must sign in to checkout');
-
-    const rawCart = JSON.parse(localStorage.getItem('cart')) || [];
-    if (!rawCart.length) return alert('Cart is empty');
-
-    // Group cart items (id, name, price, desc, size, qty)
-    const items = _.groupCart(rawCart);
-
-    // Build payload matching backend expectations: { user, items, total, datetime }
-    const total = items.reduce((s, i) => s + (Number(i.price || 0) * Number(i.qty || 0)), 0);
-    const payload = {
-        user: user.id || user.email || user.username,
-        items: items.map(i => ({
-            id: i.id,
-            name: i.name,
-            desc: i.desc || '',
-            price: Number(i.price || 0),
-            qty: Number(i.qty || 0)
-        })),
-        total,
-        datetime: new Date().toISOString()
-    };
-
-    try {
-        const res = await fetch(`${API_BASE}/purchase`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        const contentType = res.headers.get('content-type') || '';
-        const body = contentType.includes('application/json') ? await res.json() : await res.text();
-
-        if (!res.ok) {
-            const msg = (body && body.error) ? body.error : (typeof body === 'string' ? body : `HTTP ${res.status}`);
-            console.error('Checkout server error:', res.status, body);
-            showMessage('Checkout failed: ' + msg, 'error', 6000);
-            return;
-        }
-
-        // success
-        localStorage.removeItem('cart');
-        window.dispatchEvent(new Event('cartUpdated'));
-        showMessage('Checkout completed — inventory updated', 'success', 4000);
-        if (typeof loadInventorySneakers === 'function') loadInventorySneakers();
-        if (typeof loadDashboardData === 'function') loadDashboardData();
-        renderCart();
-
-    } catch (err) {
-        console.error('Checkout network error:', err);
-
-        const purchases = _.safeParse('purchases') || [];
-        purchases.push({
-            user: user.username || user.email || 'guest',
-            items: items,
-            total: total,
-            datetime: new Date().toISOString(),
-            synced: false
-        });
-        _.save('purchases', purchases);
-
-        localStorage.removeItem('cart'); window.dispatchEvent(new Event('cartUpdated'));
-        showMessage('Checkout stored locally (offline) - Inventory not updated', 'info', 6000);
-        renderCart();
-    }
-}
-
-// --------------------------- Purchases view ---------------------------
-async function renderPurchaseHistory() {
-    const table = document.getElementById('purchaseTable'); if (!table) return;
-    const thead = table.querySelector('thead'); const tbody = table.querySelector('tbody');
-    if (!thead || !tbody) return;
-    const currentUser = _.safeParse('currentUser');
-    const isAdmin = !!(currentUser && currentUser.role === 'admin');
-
-    thead.innerHTML = isAdmin
-        ? `<tr><th>Date & Time</th><th>User</th><th>Items</th><th>Description</th><th>Total</th></tr>`
-        : `<tr><th>Date & Time</th><th>Items</th><th>Description</th><th>Total</th></tr>`;
-    tbody.innerHTML = `<tr><td colspan="${isAdmin ? 5 : 4}">Loading...</td></tr>`;
-
-    let rows = [];
-    try {
-        const url = isAdmin ? `${API_BASE}/purchase` : `${API_BASE}/purchase/${currentUser?.id}`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error('Failed to load purchases');
-        rows = await res.json();
-    } catch (e) {
-        const local = _.safeParse('purchases') || [];
-        rows = [];
-        for (const p of local) {
-            for (const it of (p.items || [])) {
-                rows.push({
-                    date: new Date(p.datetime).toISOString(),
-                    username: p.user,
-                    email: p.user,
-                    item: it.name,
-                    item_desc: it.desc || '',
-                    price: it.price
-                });
-            }
-        }
-    }
-
-    const makeKey = r => `${r.date}|${r.username || ''}|${r.email || ''}`;
-    const map = new Map();
-    for (const r of rows) {
-        const k = makeKey(r);
-        if (!map.has(k)) map.set(k, { date: r.date, user: r.username || r.email || 'unknown', items: [], total: 0 });
-        const g = map.get(k);
-        g.items.push({ name: r.item, desc: r.item_desc || '', price: Number(r.price) || 0 });
-        g.total += Number(r.price) || 0;
-    }
-
-    function summarize(items) {
-        const c = new Map();
-        for (const it of items) {
-            const n = it.name || 'Item';
-            const cur = c.get(n) || { name: n, qty: 0 };
-            cur.qty += 1; c.set(n, cur);
-        }
-        return Array.from(c.values()).map(x => `${x.name} x${x.qty}`).join(', ');
-    }
-    function getDescriptions(items) {
-        const descs = items.map(it => it.desc || '').filter(d => d);
-        return [...new Set(descs)].join(', ');
-    }
-
-    const groups = Array.from(map.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
-    tbody.innerHTML = '';
-    if (!groups.length) { tbody.innerHTML = `<tr><td colspan="${isAdmin ? 5 : 4}">No purchases yet.</td></tr>`; return; }
-    for (const g of groups) {
-        const tr = document.createElement('tr');
-        const dt = new Date(g.date);
-        const human = isNaN(dt) ? g.date : dt.toLocaleString();
-        if (isAdmin) {
-            tr.innerHTML = `<td>${human}</td><td>${g.user}</td><td>${summarize(g.items)}</td><td>${getDescriptions(g.items)}</td><td>R${g.total.toFixed(2)}</td>`;
-        } else {
-            tr.innerHTML = `<td>${human}</td><td>${summarize(g.items)}</td><td>${getDescriptions(g.items)}</td><td>R${g.total.toFixed(2)}</td>`;
-        }
-        tbody.appendChild(tr);
-    }
-}
-
-// --------------------------- Featured & Inventory ---------------------------
+/* ---------- Render functions ---------- */
 async function renderFeaturedSneakers() {
-    const grid = document.getElementById('featuredGrid'); if (!grid) return; grid.innerHTML = '';
-    let remote = [];
-    try { remote = await _.fetchJson(`${API_BASE}/sneakers`); } catch (_) { remote = []; }
-    const local = _.safeParse('sneakers') || [];
-    const seen = new Set(remote.map(s => String(s.name).toLowerCase()));
-    local.forEach(ls => { if (!seen.has(String(ls.name).toLowerCase())) remote.push(ls); });
-    if (!remote.length) { const ph = document.createElement('div'); ph.className = 'featured-placeholder'; ph.textContent = 'No featured sneakers yet.'; grid.appendChild(ph); return; }
-    remote.forEach(s => {
-        const card = document.createElement('div'); card.className = 'card';
-        card.innerHTML = `
-            <div style="position:relative;">${s.synced === false ? '<div class="pending-badge">Pending</div>' : ''}<img loading="lazy" src="${s.image || ''}" alt="${s.name || ''}"></div>
-            <h3>${s.name || ''}</h3>
-            <p>${s.desc || ''}</p>
-            <button class="view-btn" data-id="${s.id || ''}">View</button>`;
-        grid.appendChild(card);
-    });
-}
-async function loadInventorySneakers() {
-    const cardGrid = document.getElementById('inventoryGrid'); if (!cardGrid) return; cardGrid.innerHTML = '';
-    let remote = []; let backendOk = false;
-    try { const res = await fetch(`${API_BASE}/sneakers`); if (res.ok) { remote = await res.json(); backendOk = true; } } catch (e) { remote = []; }
-    const local = _.safeParse('sneakers') || [];
-    if (backendOk) { const names = new Set(remote.map(s => String(s.name).toLowerCase())); local.forEach(ls => { if (!names.has(String(ls.name).toLowerCase())) remote.push(ls); }); } else remote = local;
-    if (!remote.length) { const ph = document.createElement('div'); ph.className = 'featured-placeholder'; ph.textContent = 'No products available yet.'; cardGrid.appendChild(ph); return; }
-    const currentUser = _.safeParse('currentUser');
-    remote.forEach(s => {
-        const div = document.createElement('div'); div.className = 'card';
-        let html = `<div style="position:relative;">${s.synced === false ? '<div class="pending-badge">Pending</div>' : ''}<img loading="lazy" src="${s.image || ''}" alt="${s.name || ''}"></div><h3>${s.name}</h3><p>${s.desc || ''}</p><p>Price: R${s.price}</p><p>In Stock: ${s.qty !== undefined ? s.qty : 'N/A'}</p>`;
-        if (!currentUser || currentUser.role !== 'admin') html += `<button class="add-to-cart-btn" data-id="${s.id}" ${s.qty === 0 ? 'disabled' : ''}>${s.qty === 0 ? 'Out of Stock' : 'Add to Cart'}</button>`;
-        if (currentUser && currentUser.role === 'admin') html += `<div class="admin-controls"><button class="edit-sneaker-btn" data-id="${s.id}">Edit</button><button class="delete-sneaker-btn" data-id="${s.id}">Delete</button></div>`;
-        div.innerHTML = html; if (s.id) div.dataset.id = s.id; cardGrid.appendChild(div);
-    });
-    try { const target = new URLSearchParams(window.location.search).get('sneaker'); if (target) setTimeout(() => openProductModalById(target), 400); } catch (e) {}
+  const grid = document.getElementById('featuredGrid'); if (!grid) return;
+  grid.innerHTML = 'Loading...';
+  const list = await fetchSneakers();
+  grid.innerHTML = '';
+  if (!list.length) { grid.innerHTML = '<div class="placeholder">No products yet</div>'; return; }
+  list.forEach(s => {
+    const card = document.createElement('div'); card.className = 'card';
+    card.innerHTML = `
+      <div class="card-img-wrap"><img src="${s.image || ''}" alt="${s.name || ''}" loading="lazy"/></div>
+      <h3>${s.name || ''}</h3>
+      <p>${s.desc || ''}</p>
+      <div class="card-meta">R${Number(s.price||0).toFixed(2)}</div>
+      <div class="card-actions">
+        <button class="view-btn" data-id="${s.id}">View</button>
+      </div>`;
+    card.querySelector('.view-btn')?.addEventListener('click', () => openProductModalById(s.id));
+    grid.appendChild(card);
+  });
 }
 
-// --------------------------- Product modal ---------------------------
-function populateProductModal(s) {
-    const img = document.getElementById('productImage'); if (img) img.src = s.image || '';
-    const name = document.getElementById('productName'); if (name) name.textContent = s.name || '';
-    const desc = document.getElementById('productDesc'); if (desc) desc.textContent = s.desc || '';
-    const price = document.getElementById('productPrice'); if (price) price.textContent = s.price ? `Price: R${s.price}` : '';
-    const add = document.getElementById('productAddToCart'); if (add) add.dataset.id = s.id || '';
-    const cu = _.safeParse('currentUser');
-    if (cu && cu.role === 'admin') {
-        if (add) add.style.display = 'none';
-        const buy = document.getElementById('productBuyNow'); if (buy) buy.style.display = 'none';
-    } else {
-        if (add) add.style.display = '';
-        const buy = document.getElementById('productBuyNow'); if (buy) buy.style.display = '';
+async function loadInventorySneakers() {
+  const grid = document.getElementById('inventoryGrid'); if (!grid) return;
+  grid.innerHTML = 'Loading...';
+  const list = await fetchSneakers();
+  grid.innerHTML = '';
+  if (!list.length) { grid.innerHTML = '<div class="placeholder">No products available</div>'; return; }
+  const user = utils.currentUser();
+  list.forEach(s => {
+    const div = document.createElement('div'); div.className = 'card'; div.dataset.id = s.id;
+    const addBtn = (!user || user.role !== 'admin') ? `<button class="add-to-cart-btn" data-id="${s.id}" ${s.qty===0?'disabled':''}>${s.qty===0?'Out of Stock':'Add to Cart'}</button>` : '';
+    const adminControls = (user && user.role === 'admin') ? `<div class="admin-controls"><button class="edit-sneaker-btn" data-id="${s.id}">Edit</button><button class="delete-sneaker-btn" data-id="${s.id}">Delete</button></div>` : '';
+    div.innerHTML = `
+      <div class="card-img-wrap"><img src="${s.image||''}" alt="${s.name||''}" loading="lazy"/></div>
+      <h3>${s.name||''}</h3>
+      <p>${s.desc||''}</p>
+      <p>Price: R${Number(s.price||0).toFixed(2)}</p>
+      <p>In Stock: ${s.qty!==undefined ? s.qty : 'N/A'}</p>
+      ${addBtn}
+      ${adminControls}
+    `;
+    grid.appendChild(div);
+  });
+
+  // delegation for add/edit/delete
+  grid.addEventListener('click', async (ev) => {
+    const t = ev.target;
+    if (t.matches('.add-to-cart-btn')) {
+      const id = t.dataset.id; openProductModalById(id); return;
     }
+    if (t.matches('.edit-sneaker-btn')) {
+      const id = t.dataset.id; await openEditSneakerModal(id); return;
+    }
+    if (t.matches('.delete-sneaker-btn')) {
+      const id = t.dataset.id; if (!confirm('Delete?')) return;
+      try {
+        await utils.fetchJson(`${API_BASE}/sneakers/${id}`, { method: 'DELETE' });
+        utils.showMessage('Deleted', 'success');
+        loadInventorySneakers();
+      } catch (err) { utils.showMessage('Delete failed', 'error'); }
+    }
+  });
+}
+
+/* ---------- Product modal ---------- */
+function populateProductModal(s) {
+  document.getElementById('productImage')?.setAttribute('src', s.image || '');
+  document.getElementById('productName')?.textContent = s.name || '';
+  document.getElementById('productDesc')?.textContent = s.desc || '';
+  document.getElementById('productPrice')?.textContent = s.price ? `Price: R${s.price}` : '';
+  const addBtn = document.getElementById('productAddToCart'); if (addBtn) addBtn.dataset.id = s.id;
 }
 async function openProductModalById(id) {
-    let sneaker = null;
-    try { const list = await _.fetchJson(`${API_BASE}/sneakers`); sneaker = list.find(x => String(x.id) === String(id)); } catch (_) { sneaker = (_.safeParse('sneakers') || []).find(x => String(x.id) === String(id)); }
-    if (!sneaker) sneaker = (_.safeParse('sneakers') || []).find(x => String(x.id) === String(id));
-    if (!sneaker) return;
-    populateProductModal(sneaker);
-    const modal = document.getElementById('productModal'); if (modal) modal.style.display = 'flex';
+  const list = await fetchSneakers();
+  const s = list.find(x => String(x.id) === String(id));
+  if (!s) return utils.showMessage('Product not found', 'error');
+  populateProductModal(s);
+  const modal = document.getElementById('productModal'); if (modal) modal.style.display = 'flex';
 }
 
-// --------------------------- Sync local unsynced sneakers to backend ---------------------------
-async function syncLocalSneakersToBackend() {
-    const local = _.safeParse('sneakers') || [];
-    const unsynced = local.filter(s => s.synced === false || s.synced === undefined);
-    if (!unsynced.length) return;
-    for (const s of unsynced) {
-        try {
-            const res = await fetch(`${API_BASE}/sneakers`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: s.name, image: s.image, price: s.price, desc: s.desc, qty: s.qty }) });
-            if (res.ok) s.synced = true; else break;
-        } catch (err) { console.warn('sync failed', err); break; }
-    }
-    _.save('sneakers', local);
-}
-
-// --------------------------- DOM wiring & events ---------------------------
-document.addEventListener('DOMContentLoaded', () => {
-    const signInBtn = document.getElementById('signInBtn'); if (signInBtn) signInBtn.addEventListener('click', () => window.location.href = 'signin.html');
-    const registerBtn = document.getElementById('registerBtn'); if (registerBtn) registerBtn.addEventListener('click', () => window.location.href = 'register.html');
-    const shopNowBtn = document.getElementById('shopNowBtn'); if (shopNowBtn) shopNowBtn.addEventListener('click', () => window.location.href = 'inventory.html');
-
-    const path = window.location.pathname;
-
-    if (/index.html|\/$/.test(path)) renderFeaturedSneakers();
-    if (path.includes('inventory.html')) loadInventorySneakers();
-    if (path.includes('purchase-history.html')) renderPurchaseHistory();
-    if (path.includes('admin.html')) {
-        const cu = _.safeParse('currentUser');
-        if (!cu || cu.role !== 'admin') {
-            alert('Access denied. Admins only.');
-            window.location.href = 'signin.html';
-            return;
-        }
-        renderAdminInventoryTable();
-        loadDashboardDataIfPresent();
-    }
-
-    const adminIndicator = document.getElementById('adminIndicator');
-    const currentUser = _.safeParse('currentUser');
-    if (adminIndicator && currentUser && currentUser.role === 'admin') adminIndicator.style.display = '';
-
-    const isExcludedPage = /index\.html|\/$/.test(path) || /signin\.html/.test(path) || /register\.html/.test(path);
-    if (currentUser && !isExcludedPage) {
-        if (!document.getElementById('uwvOptionsToggle')) {
-            const wrap = document.createElement('div');
-            wrap.style.position = 'fixed';
-            wrap.style.top = '16px';
-            wrap.style.left = '16px';
-            wrap.style.zIndex = '1500';
-            wrap.style.display = 'flex';
-            wrap.style.flexDirection = 'column';
-
-            const btn = document.createElement('button');
-            btn.id = 'uwvOptionsToggle';
-            btn.type = 'button';
-            btn.setAttribute('aria-label', 'Menu');
-            btn.style.background = '#111';
-            btn.style.color = '#fff';
-            btn.style.border = 'none';
-            btn.style.borderRadius = '10px';
-            btn.style.padding = '8px';
-            btn.style.cursor = 'pointer';
-            btn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
-            btn.style.width = '40px';
-            btn.style.height = '40px';
-            btn.style.display = 'flex';
-            btn.style.alignItems = 'center';
-            btn.style.justifyContent = 'center';
-
-            const barWrap = document.createElement('div');
-            barWrap.style.display = 'grid';
-            barWrap.style.gap = '4px';
-            for (let i = 0; i < 3; i++) {
-                const bar = document.createElement('div');
-                bar.style.width = '20px';
-                bar.style.height = '2px';
-                bar.style.background = '#fff';
-                bar.style.borderRadius = '2px';
-                barWrap.appendChild(bar);
-            }
-            btn.appendChild(barWrap);
-
-            const menu = document.createElement('div');
-            menu.id = 'uwvOptionsMenu';
-            menu.style.position = 'absolute';
-            menu.style.top = '46px';
-            menu.style.left = '0';
-            menu.style.background = '#fff';
-            menu.style.border = '1px solid #eee';
-            menu.style.borderRadius = '10px';
-            menu.style.padding = '8px';
-            menu.style.minWidth = '180px';
-            menu.style.boxShadow = '0 6px 18px rgba(0,0,0,0.12)';
-            menu.style.display = 'none';
-
-            const itemPH = document.createElement('a');
-            itemPH.href = 'purchase-history.html';
-            itemPH.textContent = 'Purchase History';
-            itemPH.style.display = 'block';
-            itemPH.style.padding = '8px 10px';
-            itemPH.style.color = '#111';
-            itemPH.style.textDecoration = 'none';
-            itemPH.style.borderRadius = '6px';
-            itemPH.addEventListener('mouseover', () => itemPH.style.background = '#f5f5f5');
-            itemPH.addEventListener('mouseout', () => itemPH.style.background = 'transparent');
-
-            const itemDashboard = document.createElement('a');
-            itemDashboard.href = 'dashboard.html';
-            itemDashboard.textContent = 'Dashboard';
-            itemDashboard.style.display = 'block';
-            itemDashboard.style.padding = '8px 10px';
-            itemDashboard.style.color = '#111';
-            itemDashboard.style.textDecoration = 'none';
-            itemDashboard.style.borderRadius = '6px';
-            itemDashboard.addEventListener('mouseover', () => itemDashboard.style.background = '#f5f5f5');
-            itemDashboard.addEventListener('mouseout', () => itemDashboard.style.background = 'transparent');
-
-            menu.appendChild(itemDashboard);
-            menu.appendChild(itemPH);
-            wrap.appendChild(btn);
-            wrap.appendChild(menu);
-            document.body.appendChild(wrap);
-
-            const header = document.querySelector('header');
-            if (header) header.style.paddingLeft = '5rem';
-
-            btn.addEventListener('click', (e) => { e.stopPropagation(); menu.style.display = menu.style.display === 'none' ? 'block' : 'none'; });
-            document.addEventListener('click', (e) => { if (menu.style.display === 'block') menu.style.display = 'none'; });
-        }
-    }
-
-    // Modal close handlers
-    const close = document.getElementById('closeProductModal'); if (close) close.addEventListener('click', () => { const m = document.getElementById('productModal'); if (m) m.style.display = 'none'; });
-    window.addEventListener('click', (ev) => { const m = document.getElementById('productModal'); if (m && ev.target === m) m.style.display = 'none'; });
-
-    // product add/buy
-    const addBtn = document.getElementById('productAddToCart'); if (addBtn) addBtn.addEventListener('click', async function () {
-        const id = this.dataset.id; if (!id) return;
-        let sneaker = null;
-        try { sneaker = (await _.fetchJson(`${API_BASE}/sneakers`)).find(x => String(x.id) === String(id)); } catch (_) { sneaker = (_.safeParse('sneakers') || []).find(x => String(x.id) === String(id)); }
-        if (!sneaker) return alert('Sneaker not found');
-        const sizeEl = document.getElementById('productSize'); const qtyEl = document.getElementById('productQty'); const size = sizeEl ? sizeEl.value : ''; const qty = qtyEl ? parseInt(qtyEl.value, 10) || 1 : 1;
-        const cart = JSON.parse(localStorage.getItem('cart')) || [];
-        for (let i = 0; i < qty; i++) cart.push({ id: sneaker.id, name: sneaker.name, desc: sneaker.desc, price: sneaker.price, image: sneaker.image, size, qty: 1 });
-        localStorage.setItem('cart', JSON.stringify(cart)); window.dispatchEvent(new Event('cartUpdated'));
-        const modal = document.getElementById('productModal'); if (modal) modal.style.display = 'none';
-    });
-    const buyNow = document.getElementById('productBuyNow'); if (buyNow) buyNow.addEventListener('click', () => { const add = document.getElementById('productAddToCart'); if (add) add.click(); window.location.href = 'cart.html'; });
-
-    // Inventory grid event delegation
-    const grid = document.getElementById('inventoryGrid'); if (grid) {
-        grid.addEventListener('click', async (ev) => {
-            const t = ev.target;
-            if (t.classList.contains('add-to-cart-btn')) {
-                const id = t.dataset.id;
-                if (id) { openProductModalById(id); }
-                return;
-            }
-            if (t.classList.contains('edit-sneaker-btn')) {
-                ev.preventDefault(); ev.stopPropagation();
-                const id = t.dataset.id;
-                try {
-                    let list = [];
-                    try { list = await _.fetchJson(`${API_BASE}/sneakers`); }
-                    catch (_) { list = _.safeParse('sneakers') || []; }
-                    const s = list.find(x => String(x.id) === String(id));
-                    if (!s) return alert('Sneaker not found');
-                    document.getElementById('editSneakerId').value = s.id;
-                    document.getElementById('editSneakerName').value = s.name || '';
-                    document.getElementById('editSneakerPrice').value = s.price || 0;
-                    document.getElementById('editSneakerQty').value = s.qty || 0;
-                    document.getElementById('editSneakerImage').value = s.image || '';
-                    document.getElementById('editSneakerDesc').value = s.desc || '';
-                    document.getElementById('editSneakerModal').style.display = 'block';
-                } catch (e) { alert('Failed to load sneaker'); }
-            }
-            if (t.classList.contains('delete-sneaker-btn')) { const id = t.dataset.id; if (!confirm('Delete?')) return; try { await fetch(`${API_BASE}/sneakers/${id}`, { method: 'DELETE' }); loadInventorySneakers(); } catch { alert('Delete failed'); } }
-            const card = t.closest && t.closest('.card'); if (card && !t.classList.contains('edit-sneaker-btn') && !t.classList.contains('delete-sneaker-btn')) { const id = card.dataset.id; if (id) openProductModalById(id); }
-        });
-    }
-
-    // Document-level fallback for dynamic edit buttons
-    document.addEventListener('click', async (ev) => {
-        const t = ev.target;
-        if (!(t && t.classList && t.classList.contains('edit-sneaker-btn'))) return;
-        ev.preventDefault();
-        const id = t.dataset && t.dataset.id;
-        if (!id) return;
-        try {
-            let list = [];
-            try { list = await _.fetchJson(`${API_BASE}/sneakers`); }
-            catch (_) { list = _.safeParse('sneakers') || []; }
-            const s = list.find(x => String(x.id) === String(id));
-            if (!s) return alert('Sneaker not found');
-            document.getElementById('editSneakerId').value = s.id;
-            document.getElementById('editSneakerName').value = s.name || '';
-            document.getElementById('editSneakerPrice').value = s.price || 0;
-            document.getElementById('editSneakerQty').value = s.qty || 0;
-            document.getElementById('editSneakerImage').value = s.image || '';
-            document.getElementById('editSneakerDesc').value = s.desc || '';
-            document.getElementById('editSneakerModal').style.display = 'block';
-        } catch (e) { alert('Failed to load sneaker'); }
-    }, true);
-
-    // Edit modal close handler
-    const closeEdit = document.getElementById('closeEditModal'); if (closeEdit) closeEdit.addEventListener('click', () => { const m = document.getElementById('editSneakerModal'); if (m) m.style.display = 'none'; });
-
-    // Edit form submit handler (admin)
-    const editForm = document.getElementById('editSneakerForm'); if (editForm) editForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const id = document.getElementById('editSneakerId').value;
-        const name = document.getElementById('editSneakerName').value;
-        const price = parseFloat(document.getElementById('editSneakerPrice').value) || 0;
-        const qty = parseInt(document.getElementById('editSneakerQty').value, 10) || 0;
-        const image = document.getElementById('editSneakerImage').value;
-        const desc = document.getElementById('editSneakerDesc').value;
-        try {
-            const token = localStorage.getItem("token");
-
-            const res = await fetch(`${API_BASE}/sneakers/${id}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ name, image, price, desc, qty })
-            });
-
-            if (!res.ok) throw new Error('Update failed');
-            alert('Sneaker updated');
-            const m = document.getElementById('editSneakerModal'); if (m) m.style.display = 'none';
-            if (typeof loadInventorySneakers === 'function') loadInventorySneakers();
-        } catch (err) {
-            alert(err.message || 'Update failed');
-        }
-    });
-
-    // DELETE SNEAKER — Admin only
-    document.addEventListener('click', async (ev) => {
-        const t = ev.target;
-        if (!(t && t.classList && t.classList.contains('delete-sneaker-btn'))) return;
-
-        ev.preventDefault();
-        const id = t.dataset.id;
-        if (!id) return;
-
-        const confirmPopup = document.getElementById('deleteConfirmModal');
-        const confirmBtn = document.getElementById('confirmDeleteBtn');
-        const cancelBtn = document.getElementById('cancelDeleteBtn');
-
-        if (!confirmPopup) return alert("Delete modal missing");
-
-        confirmPopup.style.display = 'block';
-
-        const newConfirmBtn = confirmBtn.cloneNode(true);
-        confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
-
-        newConfirmBtn.addEventListener('click', async () => {
-            const token = localStorage.getItem("token");
-            try {
-                const res = await fetch(`${API_BASE}/sneakers/${id}`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-
-                if (!res.ok) throw new Error("Delete failed");
-
-                alert("Sneaker deleted");
-                confirmPopup.style.display = 'none';
-
-                if (typeof loadInventorySneakers === 'function') {
-                    loadInventorySneakers();
-                }
-            } catch (err) {
-                alert(err.message || "Delete failed");
-            }
-        });
-
-        cancelBtn.addEventListener('click', () => {
-            confirmPopup.style.display = 'none';
-        });
-    });
-
-    // Hide checkout box and wiring
-    const cu = _.safeParse('currentUser');
-    const isAdminLocal = !!(cu && cu.role === 'admin');
-    if (isAdminLocal) {
-        const checkoutTab = document.getElementById('checkoutTab'); if (checkoutTab) checkoutTab.style.display = 'none';
-    } else {
-        const checkoutBtn = document.getElementById('checkoutBtn') || document.getElementById('checkoutButton'); if (checkoutBtn) checkoutBtn.addEventListener('click', doCheckout);
-    }
-
-    // cart render and listeners
-    renderCart(); window.addEventListener('cartUpdated', renderCart); window.addEventListener('storage', renderCart);
-
-    // sync unsynced sneakers on load
-    syncLocalSneakersToBackend();
-
-    // staff page wiring (if present)
-    if (document.getElementById('staffTable') || document.getElementById('addStaffForm')) {
-        loadStaff().catch(err => console.warn('loadStaff failed', err));
-        const addStaffForm = document.getElementById('addStaffForm');
-        if (addStaffForm) addStaffForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const fullName = document.getElementById('staffName').value.trim();
-            const email = document.getElementById('staffEmail').value.trim();
-            const role = document.getElementById('staffRole').value.trim();
-            const password = generatePassword();
-            const newStaff = { fullName, email, role, password };
-            try {
-                const res = await fetch(`${API_BASE}/staff`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(newStaff)
-                });
-                const data = await res.json();
-                if (res.ok && data) {
-                    const gen = document.getElementById('generatedPassword');
-                    if (gen) gen.innerText = `Generated Password: ${password}`;
-                    addStaffForm.reset();
-                    await loadStaff();
-                    showMessage('Staff added', 'success');
-                } else {
-                    throw new Error(data?.error || 'Add staff failed');
-                }
-            } catch (err) {
-                console.error('Error adding staff:', err);
-                showMessage('Failed to add staff', 'error');
-            }
-        });
-    }
-
-    // kick off periodic sync once (avoid double interval)
-    if (!window.__uwv_sync_interval_set) {
-        window.__uwv_sync_interval_set = true;
-        setInterval(syncLocalSneakersToBackend, 30000);
-    }
-
-    // --------------------------- Admin inventory table renderer (init) ---------------------------
-    renderAdminInventoryTable();
-
-    // set up purchase sync interval
-    if (!window.__uwv_purchase_sync_interval_set) {
-        window.__uwv_purchase_sync_interval_set = true;
-        setInterval(() => { syncLocalPurchasesToBackend(); syncLocalSneakersToBackend(); }, 30000);
-    }
-
-    // update cart count immediately
-    updateCartCount();
+/* ---------- Add to cart / Buy ---------- */
+document.addEventListener('click', (ev) => {
+  const t = ev.target;
+  if (t.matches('#productAddToCart')) {
+    const id = t.dataset.id; if (!id) return;
+    // find product
+    fetchSneakers().then(list => {
+      const s = list.find(x => String(x.id) === String(id));
+      if (!s) return utils.showMessage('Item not found', 'error');
+      const sizeEl = document.getElementById('productSize'); const qtyEl = document.getElementById('productQty');
+      const size = sizeEl ? sizeEl.value : ''; const qty = qtyEl ? Math.max(1, parseInt(qtyEl.value)||1) : 1;
+      for (let i=0;i<qty;i++) cart.add({ id: s.id, name: s.name, desc: s.desc, price: s.price, image: s.image, size, qty: 1 });
+      utils.showMessage('Added to cart','success');
+      document.getElementById('productModal')?.style.display = 'none';
+    }).catch(()=> utils.showMessage('Add failed','error'));
+  }
+  if (t.matches('#productBuyNow')) {
+    document.getElementById('productAddToCart')?.click();
+    location.href = 'cart.html';
+  }
 });
 
-// --------------------------- Admin inventory table renderer ---------------------------
-async function renderAdminInventoryTable() {
-    const tbody = document.querySelector('#sneakerTable tbody'); if (!tbody) return;
-    const formPage = document.querySelector('.form-page');
-    if (formPage && document.getElementById('sneakerTable')) {
-        formPage.style.maxWidth = '95%';
-        formPage.style.width = '95%';
-        const form = document.getElementById('sneakerForm');
-        if (form) { form.style.maxWidth = '400px'; form.style.margin = '0 auto'; }
-    }
-    tbody.innerHTML = '<tr><td colspan="5">Loading...</td></tr>';
-    let sneakers = [];
-    try {
-        sneakers = await _.fetchJson(`${API_BASE}/sneakers`);
-    } catch (e) {
-        sneakers = _.safeParse('sneakers') || [];
-    }
-    tbody.innerHTML = '';
-    if (!sneakers.length) { tbody.innerHTML = '<tr><td colspan="5">No sneakers yet.</td></tr>'; return; }
-    sneakers.forEach(s => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>${s.name || ''}</td>
-            <td>${s.desc || ''}</td>
-            <td>R${Number(s.price || 0).toFixed(2)}</td>
-            <td>${s.qty !== undefined ? s.qty : 0}</td>
-            <td>
-                <button type="button" class="admin-edit-sneaker-btn" data-id="${s.id}">Edit</button>
-                <button type="button" class="admin-delete-sneaker-btn" data-id="${s.id}">Delete</button>
-            </td>
-        `;
-        tbody.appendChild(tr);
-    });
-    tbody.querySelectorAll('.admin-edit-sneaker-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            const id = btn.dataset.id;
-            try {
-                let list = []; try { list = await _.fetchJson(`${API_BASE}/sneakers`); } catch (_) { list = _.safeParse('sneakers') || []; }
-                const s = list.find(x => String(x.id) === String(id));
-                if (!s) return alert('Sneaker not found');
-                window.location.href = `inventory.html?sneaker=${id}`;
-            } catch (e) { alert('Failed to load sneaker'); }
-        });
-    });
-    tbody.querySelectorAll('.admin-delete-sneaker-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            const id = btn.dataset.id;
-            if (!confirm('Delete this sneaker?')) return;
-            try {
-                await fetch(`${API_BASE}/sneakers/${id}`, { method: 'DELETE' });
-                renderAdminInventoryTable();
-            } catch (e) { alert('Delete failed'); }
-        });
-    });
+/* ---------- Cart page rendering ---------- */
+function renderCartPage() {
+  const list = cart.get();
+  const grouped = {};
+  list.forEach(it => {
+    const key = `${it.id}::${it.size||''}`;
+    if (!grouped[key]) grouped[key] = { ...it, qty: 0 };
+    grouped[key].qty += 1;
+  });
+  const arr = Object.values(grouped);
+  const cartList = document.getElementById('cartList'); if (!cartList) return;
+  cartList.innerHTML = '';
+  let total = 0;
+  if (!arr.length){
+    cartList.innerHTML = '<p>Your cart is empty</p>';
+    document.getElementById('totalPrice') && (document.getElementById('totalPrice').textContent = '0.00');
+    document.getElementById('checkoutBtn') && (document.getElementById('checkoutBtn').style.display = 'none');
+    return;
+  }
+  document.getElementById('checkoutBtn') && (document.getElementById('checkoutBtn').style.display = '');
+  arr.forEach(it => {
+    const li = document.createElement('div'); li.className = 'cart-row';
+    li.innerHTML = `<div class="left"><img src="${it.image||''}" alt="${it.name}"><div><div>${it.name}</div>${it.size?`<div>Size: ${it.size}</div>`:''}</div></div>
+      <div class="right"><div>R${Number(it.price||0).toFixed(2)}</div><div>Qty: ${it.qty}</div>
+      <div><button class="cart-decrease" data-key="${it.id}::${it.size||''}">-</button>
+      <button class="cart-increase" data-key="${it.id}::${it.size||''}">+</button>
+      <button class="cart-remove" data-key="${it.id}::${it.size||''}">Remove</button></div></div>`;
+    cartList.appendChild(li);
+    total += Number(it.price||0) * it.qty;
+  });
+  document.getElementById('totalPrice') && (document.getElementById('totalPrice').textContent = total.toFixed(2));
+
+  // attach buttons
+  cartList.querySelectorAll('.cart-decrease').forEach(b => b.addEventListener('click', () => changeCartQty(b.dataset.key, -1)));
+  cartList.querySelectorAll('.cart-increase').forEach(b => b.addEventListener('click', () => changeCartQty(b.dataset.key, +1)));
+  cartList.querySelectorAll('.cart-remove').forEach(b => b.addEventListener('click', () => removeCartKey(b.dataset.key)));
+}
+function changeCartQty(key, delta) {
+  let list = cart.get();
+  const grouped = {};
+  list.forEach(it => {
+    const k = `${it.id}::${it.size||''}`;
+    if (!grouped[k]) grouped[k] = [];
+    grouped[k].push(it);
+  });
+  const arr = grouped[key] || [];
+  const newQty = Math.max(0, arr.length + delta);
+  // rebuild list
+  list = list.filter(it => `${it.id}::${it.size||''}` !== key);
+  for (let i=0;i<newQty;i++) list.push({...arr[0] || { id: key.split('::')[0], name:'Item', price:0 }, qty:1});
+  cart.save(list);
+  renderCartPage();
+  updateCartCount();
+}
+function removeCartKey(key) {
+  let list = cart.get();
+  list = list.filter(it => `${it.id}::${it.size||''}` !== key);
+  cart.save(list);
+  renderCartPage();
+  updateCartCount();
 }
 
-// --------------------------- Admin add form (fallback to local) ---------------------------
-const sneakerForm = document.getElementById('sneakerForm');
-if (sneakerForm) sneakerForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
+/* ---------- Checkout ---------- */
+async function doCheckout() {
+  const user = utils.currentUser();
+  if (!user) return location.href = 'signin.html';
+  const raw = cart.get();
+  if (!raw.length) return utils.showMessage('Cart is empty','info');
+
+  // group
+  const grouped = {};
+  raw.forEach(it => {
+    const key = `${it.id}::${it.size||''}`;
+    if (!grouped[key]) grouped[key] = { id: it.id, name: it.name, desc: it.desc, price: it.price, qty: 0 };
+    grouped[key].qty += 1;
+  });
+  const items = Object.values(grouped).map(i => ({ name: i.name, desc: i.desc, price: i.price, qty: i.qty }));
+  const payload = { user: user.id || user.email || user.username, items, datetime: new Date().toISOString() };
+  try {
+    await utils.fetchJson(`${API_BASE}/purchase`, { method: 'POST', body: JSON.stringify(payload) });
+    cart.clear();
+    utils.showMessage('Checkout complete','success');
+    renderCartPage();
+  } catch (err) {
+    utils.showMessage('Checkout failed: ' + (err.message||''), 'error');
+  }
+}
+
+/* ---------- Purchase history ---------- */
+async function renderPurchaseHistory() {
+  const table = document.getElementById('purchaseTable'); if (!table) return;
+  const user = utils.currentUser();
+  const isAdmin = !!(user && user.role === 'admin');
+  const url = isAdmin ? `${API_BASE}/purchase` : `${API_BASE}/purchase/${user?.id}`;
+  try {
+    const rows = await utils.fetchJson(url);
+    const tbody = table.querySelector('tbody'); if (!tbody) return;
+    tbody.innerHTML = '';
+    if (!rows.length) { tbody.innerHTML = `<tr><td colspan="5">No purchases yet</td></tr>`; return; }
+    // rows likely are flat rows; group by date+user
+    const groups = {};
+    rows.forEach(r => {
+      const key = `${r.date}|${r.user_id || r.user || ''}`;
+      if (!groups[key]) groups[key] = { date: r.date, user: r.user_id || r.user || 'unknown', items: [], total: 0 };
+      groups[key].items.push({ item: r.item, desc: r.item_desc, price: r.price });
+      groups[key].total += Number(r.price||0);
+    });
+    for (const g of Object.values(groups).reverse()) {
+      const tr = document.createElement('tr');
+      if (isAdmin) tr.innerHTML = `<td>${new Date(g.date).toLocaleString()}</td><td>${g.user}</td><td>${g.items.map(i=>i.item).join(', ')}</td><td>${g.items.map(i=>i.desc).filter(Boolean).join(', ')}</td><td>R${g.total.toFixed(2)}</td>`;
+      else tr.innerHTML = `<td>${new Date(g.date).toLocaleString()}</td><td>${g.items.map(i=>i.item).join(', ')}</td><td>${g.items.map(i=>i.desc).filter(Boolean).join(', ')}</td><td>R${g.total.toFixed(2)}</td>`;
+      table.querySelector('tbody').appendChild(tr);
+    }
+  } catch (err) {
+    console.warn(err);
+    table.querySelector('tbody').innerHTML = `<tr><td colspan="5">Failed to load purchases</td></tr>`;
+  }
+}
+
+/* ---------- Admin: Add/Edit Sneakers ---------- */
+async function openEditSneakerModal(id) {
+  try {
+    const list = await fetchSneakers();
+    const s = list.find(x => String(x.id) === String(id));
+    if (!s) return utils.showMessage('Not found','error');
+    document.getElementById('editSneakerId').value = s.id;
+    document.getElementById('editSneakerName').value = s.name || '';
+    document.getElementById('editSneakerPrice').value = s.price || 0;
+    document.getElementById('editSneakerQty').value = s.qty || 0;
+    document.getElementById('editSneakerImage').value = s.image || '';
+    document.getElementById('editSneakerDesc').value = s.desc || '';
+    document.getElementById('editSneakerModal').style.display = 'block';
+  } catch (err) {
+    utils.showMessage('Load failed','error');
+  }
+}
+
+document.addEventListener('submit', async (ev) => {
+  const form = ev.target;
+  // create sneaker (admin form id 'sneakerForm')
+  if (form.id === 'sneakerForm') {
+    ev.preventDefault();
     const payload = {
-        name: document.getElementById('sneakerName').value,
-        image: document.getElementById('sneakerImage').value,
-        price: parseFloat(document.getElementById('sneakerPrice').value) || 0,
-        qty: parseInt(document.getElementById('sneakerQty').value, 10) || 0,
-        desc: document.getElementById('sneakerDesc').value
+      name: form.querySelector('#sneakerName').value,
+      image: form.querySelector('#sneakerImage').value,
+      price: Number(form.querySelector('#sneakerPrice').value)||0,
+      qty: Number(form.querySelector('#sneakerQty').value)||0,
+      desc: form.querySelector('#sneakerDesc').value||''
     };
     try {
-        const res = await fetch(`${API_BASE}/sneakers`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        if (!res.ok) throw new Error('Create failed');
-        alert('Sneaker added successfully!');
-        renderAdminInventoryTable();
+      await utils.fetchJson(`${API_BASE}/sneakers`, { method: 'POST', body: JSON.stringify(payload) });
+      utils.showMessage('Sneaker added','success');
+      form.reset();
+      renderAdminInventoryTable();
     } catch (err) {
-        const local = _.safeParse('sneakers') || [];
-        local.push({ id: Date.now(), ...payload, synced: false });
-        _.save('sneakers', local);
-        alert('Sneaker added successfully! (saved locally)');
-        renderAdminInventoryTable();
+      utils.showMessage('Create failed','error');
     }
-    sneakerForm.reset();
+  }
+
+  // edit sneaker (editSneakerForm)
+  if (form.id === 'editSneakerForm') {
+    ev.preventDefault();
+    const id = form.querySelector('#editSneakerId').value;
+    const payload = {
+      name: form.querySelector('#editSneakerName').value,
+      image: form.querySelector('#editSneakerImage').value,
+      price: Number(form.querySelector('#editSneakerPrice').value)||0,
+      qty: Number(form.querySelector('#editSneakerQty').value)||0,
+      desc: form.querySelector('#editSneakerDesc').value||''
+    };
+    try {
+      await utils.fetchJson(`${API_BASE}/sneakers/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+      utils.showMessage('Updated','success');
+      document.getElementById('editSneakerModal').style.display = 'none';
+      renderAdminInventoryTable();
+    } catch (err) {
+      utils.showMessage('Update failed','error');
+    }
+  }
 });
 
-// --------------------------- Dashboard functionality ---------------------------
-function animateCount(el, newValue) {
-    if (!el) return;
-    const oldValue = parseInt(el.textContent.replace(/\D/g, '')) || 0;
-    const duration = 800;
-    const start = performance.now();
-    function update(now) {
-        const progress = Math.min((now - start) / duration, 1);
-        const value = Math.floor(oldValue + (newValue - oldValue) * progress);
-        el.textContent = value;
-        if (progress < 1) requestAnimationFrame(update);
-    }
-    requestAnimationFrame(update);
-}
-let previousLowStockIds = [];
-async function loadDashboardData() {
-    const totalSneakersEl = document.getElementById('totalSneakers');
-    const totalStaffEl = document.getElementById('totalStaff');
-    const totalUsersEl = document.getElementById('totalUsers');
-    const lowStockAlertsEl = document.getElementById('lowStockList');
-    if (!document.querySelector('.dashboard-page')) return;
-    try {
-        const sneakers = await _.fetchJson(`${API_BASE}/sneakers`);
-        const users = await _.fetchJson(`${API_BASE}/users`);
-        const totalSneakers = sneakers.reduce((sum, s) => sum + (Number(s.qty) || 0), 0);
-        const totalStaff = users.filter(u => u.role === 'admin' || u.role === 'staff').length;
-        const totalUsers = users.length;
-        animateCount(totalSneakersEl, totalSneakers);
-        animateCount(totalStaffEl, totalStaff);
-        animateCount(totalUsersEl, totalUsers);
-        const lowStock = sneakers.filter(s => (Number(s.qty) || 0) < 5);
-        const lowStockIds = lowStock.map(s => s.id || s.name);
-        const newLowStock = lowStockIds.filter(id => !previousLowStockIds.includes(id));
-        previousLowStockIds = lowStockIds;
-
-        if (lowStockAlertsEl) {
-            if (!lowStock.length) {
-                lowStockAlertsEl.innerHTML = `
-                    <tr>
-                        <td colspan="3" style="text-align:center;color:#777;padding:1rem;">
-                            No low stock alerts.
-                        </td>
-                    </tr>`;
-            } else {
-                lowStockAlertsEl.innerHTML = lowStock.map(s => `
-                    <tr class="flash-row">
-                        <td>${s.name}</td>
-                        <td>${s.desc || "No description available"}</td>
-                        <td style="font-weight:bold;color:#c00;">${s.qty || 0}</td>
-                    </tr>
-                `).join('');
-
-                setTimeout(() => {
-                    document.querySelectorAll('.flash-row').forEach(el => el.classList.remove('flash-row'));
-                }, 1500);
-            }
-        }
-
-        if (newLowStock.length > 0) {
-            const alertSound = new Audio('/assets/sounds/alert.mp3');
-            alertSound.volume = 0.6;
-            alertSound.play().catch(err => console.warn('Audio play blocked:', err));
-        }
-    } catch (err) {
-        console.error('Error loading dashboard data:', err);
-        if (totalSneakersEl) totalSneakersEl.textContent = '—';
-        if (totalStaffEl) totalStaffEl.textContent = '—';
-        if (totalUsersEl) totalUsersEl.textContent = '—';
-        if (lowStockAlertsEl) lowStockAlertsEl.innerHTML = '<li>Could not load data.</li>';
-    }
-}
-function loadDashboardDataIfPresent() {
-    if (!document.querySelector('.dashboard-page')) return;
-    loadDashboardData();
-    if (!window.__uwv_dashboard_interval_set) {
-        window.__uwv_dashboard_interval_set = true;
-        setInterval(loadDashboardData, 60000);
-    }
-}
-document.getElementById('refreshDashboard')?.addEventListener('click', loadDashboardData);
-
-// --------------------------- Password generator (for staff) ---------------------------
-function generatePassword() {
-    const length = 10;
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
-    let pass = "";
-    for (let i = 0; i < length; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length));
-    return pass;
+/* ---------- Admin Inventory Table ---------- */
+async function renderAdminInventoryTable() {
+  const tbody = document.querySelector('#sneakerTable tbody'); if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="5">Loading...</td></tr>';
+  try {
+    const list = await fetchSneakers();
+    tbody.innerHTML = '';
+    if (!list.length) { tbody.innerHTML = '<tr><td colspan="5">No sneakers</td></tr>'; return; }
+    list.forEach(s => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${s.name||''}</td><td>${s.desc||''}</td><td>R${Number(s.price||0).toFixed(2)}</td><td>${s.qty||0}</td>
+        <td><button class="admin-edit" data-id="${s.id}">Edit</button> <button class="admin-delete" data-id="${s.id}">Delete</button></td>`;
+      tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll('.admin-edit').forEach(b=>b.addEventListener('click', e=> openEditSneakerModal(e.target.dataset.id)));
+    tbody.querySelectorAll('.admin-delete').forEach(b=> b.addEventListener('click', async (e)=>{
+      if (!confirm('Delete?')) return;
+      try { await utils.fetchJson(`${API_BASE}/sneakers/${e.target.dataset.id}`, { method: 'DELETE' }); renderAdminInventoryTable(); utils.showMessage('Deleted','success'); }
+      catch { utils.showMessage('Delete failed','error'); }
+    }));
+  } catch { tbody.innerHTML = '<tr><td colspan="5">Failed to load</td></tr>'; }
 }
 
-// --------------------------- Staff management ---------------------------
+/* ---------- Staff management ---------- */
 async function loadStaff() {
-    try {
-        const res = await fetch(`${API_BASE}/staff`);
-        if (!res.ok) throw new Error('Failed to load staff');
-        const staff = await res.json();
-        const tbody = document.querySelector("#staffTable tbody");
-        if (!tbody) return;
-        tbody.innerHTML = "";
-        staff.forEach(member => {
-            const tr = document.createElement("tr");
-            tr.innerHTML = `
-                <td>${member.id}</td>
-                <td>${member.fullName}</td>
-                <td>${member.email}</td>
-                <td>${member.role}</td>
-                <td><button type="button" data-id="${member.id}" class="remove-staff-btn btn-danger">Remove</button></td>
-            `;
-            tbody.appendChild(tr);
-        });
-        tbody.querySelectorAll('.remove-staff-btn').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const id = btn.dataset.id;
-                if (!confirm('Are you sure you want to remove this staff member?')) return;
-                try {
-                    const res = await fetch(`${API_BASE}/staff/${id}`, { method: 'DELETE' });
-                    const data = await res.json();
-                    if (res.ok) loadStaff();
-                    else throw new Error(data?.error || 'Delete failed');
-                } catch (err) { console.error('Error deleting staff:', err); alert('Delete failed'); }
-            });
-        });
-    } catch (err) {
-        console.error("Error loading staff:", err);
-    }
+  const tbody = document.querySelector('#staffTable tbody'); if (!tbody) return;
+  try {
+    const list = await utils.fetchJson(`${API_BASE}/staff`);
+    tbody.innerHTML = '';
+    if (!list.length) { tbody.innerHTML = '<tr><td colspan="5">No staff</td></tr>'; return; }
+    list.forEach(s => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${s.id}</td><td>${s.fullName}</td><td>${s.email}</td><td>${s.role}</td><td><button class="remove-staff" data-id="${s.id}">Remove</button></td>`;
+      tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll('.remove-staff').forEach(b => b.addEventListener('click', async (e) => {
+      if (!confirm('Remove staff?')) return;
+      try { await utils.fetchJson(`${API_BASE}/staff/${e.target.dataset.id}`, { method: 'DELETE' }); loadStaff(); utils.showMessage('Removed','success'); }
+      catch { utils.showMessage('Remove failed','error'); }
+    }));
+  } catch (err) { tbody.innerHTML = '<tr><td colspan="5">Failed to load</td></tr>'; }
 }
 
-// --------------------------- Periodic tasks (attempt to sync purchases/un-synced resources if backend available) ---------------------------
-async function syncLocalPurchasesToBackend() {
-    const purchases = _.safeParse('purchases') || [];
-    if (!purchases.length) return;
-    let changed = false;
-    for (const p of purchases) {
-        if (p.synced) continue;
-        try {
-            const res = await fetch(`${API_BASE}/purchase`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) });
-            if (res.ok) { p.synced = true; changed = true; }
-            else {
-                const body = await res.json().catch(() => null);
-                console.warn('Server rejected purchase sync:', body);
-                // If server responds with 4xx for business reason, mark as synced=false but don't retry forever; you may want to notify user
-            }
-        } catch (err) { console.warn('purchase sync failed', err); break; }
-    }
-    if (changed) _.save('purchases', purchases);
-}
-// set an interval for syncing purchases (attempt)
-if (!window.__uwv_purchase_sync_interval_set) {
-    window.__uwv_purchase_sync_interval_set = true;
-    setInterval(() => { syncLocalPurchasesToBackend(); syncLocalSneakersToBackend(); }, 30000);
+/* ---------- Dashboard stats ---------- */
+async function loadDashboardData() {
+  const elUsers = document.getElementById('totalUsers'); const elStaff = document.getElementById('totalStaff'); const elProducts = document.getElementById('totalSneakers'); const elRevenue = document.getElementById('totalRevenue');
+  if (!elUsers && !elStaff && !elProducts && !elRevenue) return;
+  try {
+    const [u, st, pr, rv] = await Promise.all([
+      utils.fetchJson(`${API_BASE}/stats/users`),
+      utils.fetchJson(`${API_BASE}/stats/staff`),
+      utils.fetchJson(`${API_BASE}/stats/products`),
+      utils.fetchJson(`${API_BASE}/stats/revenue`)
+    ]);
+    if (elUsers) elUsers.textContent = u.total || 0;
+    if (elStaff) elStaff.textContent = st.total || 0;
+    if (elProducts) elProducts.textContent = pr.total || 0;
+    if (elRevenue) elRevenue.textContent = `R${Number(rv.total||0).toFixed(2)}`;
+  } catch (err) { console.warn('dashboard load failed', err); }
 }
 
+/* ---------- Page init & event wiring ---------- */
+function updateCartCount() {
+  const el = document.getElementById('cartCount'); if (!el) return;
+  const count = cart.get().length || 0; el.textContent = count;
+}
 window.addEventListener('cartUpdated', updateCartCount);
 window.addEventListener('storage', updateCartCount);
 updateCartCount();
+
+document.addEventListener('DOMContentLoaded', () => {
+  // header links
+  document.getElementById('signOutBtn')?.addEventListener('click', signOut);
+  document.getElementById('signInBtn')?.addEventListener('click', ()=> location.href = 'signin.html');
+  document.getElementById('registerBtn')?.addEventListener('click', ()=> location.href = 'register.html');
+
+  const path = location.pathname;
+  if (/index.html|\/$/.test(path)) renderFeaturedSneakers();
+  if (path.includes('inventory.html')) loadInventorySneakers();
+  if (path.includes('cart.html')) renderCartPage();
+  if (path.includes('purchase-history.html')) renderPurchaseHistory();
+  if (path.includes('admin.html')) { if (!requireAuth(true,'admin')) return; renderAdminInventoryTable(); loadDashboardData(); }
+  if (path.includes('staff.html')) { if (!requireAuth(true,'admin')) return; loadStaff(); }
+  if (path.includes('dashboard.html')) { if (!requireAuth(true,'admin')) return; loadDashboardData(); setInterval(loadDashboardData,60000); }
+
+  // wire checkout
+  document.getElementById('checkoutBtn')?.addEventListener('click', doCheckout);
+
+  // basic modal close wiring (product + edit)
+  document.querySelectorAll('.modal .close-btn').forEach(b => b.addEventListener('click', ()=> b.closest('.modal').style.display = 'none'));
+});
+
+/* ---------- Expose some functions for templates (if needed) ---------- */
+window.openProductModalById = openProductModalById;
+window.renderAdminInventoryTable = renderAdminInventoryTable;
+window.loadInventorySneakers = loadInventorySneakers;
+window.loadDashboardData = loadDashboardData;
+window.loadStaff = loadStaff;
+

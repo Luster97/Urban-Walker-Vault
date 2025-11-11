@@ -95,9 +95,18 @@
 
 </main>
 
-<script>
-const API_BASE = "http://localhost:3001/api";
+<footer><p>© 2025 Urban Walker Vault. All rights reserved.</p>/footer>
 
+    <script>
+const API_BASE =
+    (typeof window !== "undefined" && (
+        window.location.protocol === "file:" ||
+        /localhost|127\.0\.0\.1/.test(window.location.hostname)
+    ))
+    ? "http://localhost:3001/api"
+    : "https://urban-walker-vault.onrender.com/api";
+
+/* Simple helper */
 async function fetchJSON(url) {
     const res = await fetch(url);
     return res.json();
@@ -105,22 +114,24 @@ async function fetchJSON(url) {
 
 async function loadDashboard() {
     try {
-        //  Fetch all stats from backend
+        // Get stats from backend
         const users = await fetchJSON(`${API_BASE}/stats/users`);
         const staff = await fetchJSON(`${API_BASE}/stats/staff`);
         const products = await fetchJSON(`${API_BASE}/stats/products`);
         const revenue = await fetchJSON(`${API_BASE}/stats/revenue`);
         const dailySales = await fetchJSON(`${API_BASE}/sales/daily`);
 
-        //  Display counts
-        document.getElementById("totalUsers").textContent = users.total;
-        document.getElementById("totalStaff").textContent = staff.total;
-        document.getElementById("totalProducts").textContent = products.total;
-        document.getElementById("totalRevenue").textContent = "R " + revenue.total;
+        // Display stats
+        document.getElementById("totalUsers").textContent = users.total || 0;
+        document.getElementById("totalStaff").textContent = staff.total || 0;
+        document.getElementById("totalProducts").textContent = products.total || 0;
 
-        //  Build revenue chart
-        const labels = dailySales.map(r => r.day);
-        const values = dailySales.map(r => r.total);
+        document.getElementById("totalRevenue").textContent =
+            "R " + (revenue.total?.toFixed(2) || "0.00");
+
+        // Build daily revenue chart
+        const labels = dailySales.map(entry => entry.day);
+        const values = dailySales.map(entry => entry.total);
 
         const ctx = document.getElementById("dailyRevenueChart");
 
@@ -132,8 +143,14 @@ async function loadDashboard() {
                     label: "Daily Revenue",
                     data: values,
                     borderWidth: 3,
+                    borderColor: "#0a84ff",
+                    tension: 0.3,
                     fill: false
                 }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
             }
         });
     } catch (err) {
@@ -141,7 +158,6 @@ async function loadDashboard() {
     }
 }
 
-//  Load everything on page ready
 document.addEventListener("DOMContentLoaded", loadDashboard);
 </script>
 

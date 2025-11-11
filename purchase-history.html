@@ -40,7 +40,57 @@
         <p>© 2025 Urban Walker Vault. All rights reserved.</p>
     </footer>
 
-    <script src="admin.js"></script>
-    <script src="script.js"></script>
+    <script>
+const API_BASE = "https://urban-walker-vault.onrender.com/api";
+
+/* Load purchase history */
+async function loadPurchaseHistory() {
+    const tbody = document.querySelector("#purchaseTable tbody");
+    tbody.innerHTML = `<tr><td colspan="5">Loading...</td></tr>`;
+
+    try {
+        const res = await fetch(`${API_BASE}/purchases`);
+        const data = await res.json();
+
+        tbody.innerHTML = "";
+
+        if (!data || data.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="5">No purchase records found.</td></tr>`;
+            return;
+        }
+
+        data.forEach(p => {
+            const formattedItems = Array.isArray(p.items)
+                ? p.items.map(i => `${i.name} (x${i.quantity})`).join("<br>")
+                : p.items;
+
+            const tr = document.createElement("tr");
+
+            tr.innerHTML = `
+                <td>${new Date(p.timestamp).toLocaleString()}</td>
+                <td>${p.user || "Unknown"}</td>
+                <td>${formattedItems}</td>
+                <td>${p.description || "-"}</td>
+                <td>R ${p.total?.toFixed(2) || "0.00"}</td>
+            `;
+
+            tbody.appendChild(tr);
+        });
+
+    } catch (err) {
+        console.error(err);
+        tbody.innerHTML = `<tr><td colspan="5">Failed to load purchase history.</td></tr>`;
+    }
+}
+
+/* Sign Out */
+function signOut() {
+    localStorage.removeItem("jwtToken");
+    window.location.href = "signin.html";
+}
+
+document.addEventListener("DOMContentLoaded", loadPurchaseHistory);
+</script>
+
 </body>
 </html>

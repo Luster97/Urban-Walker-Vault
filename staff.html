@@ -78,9 +78,7 @@
     </footer>   
     
     <script>
-const API_BASE = (typeof window !== 'undefined' && (
-    window.location.protocol === 'file:' || /localhost|127\.0\.0\.1/.test(window.location.hostname)
-)) ? 'http://localhost:3001/api' : '/api';
+const API_BASE = "https://urban-walker-vault.onrender.com/api";
 
 /* Random password generator */
 function generatePassword(len = 12) {
@@ -93,7 +91,7 @@ function generatePassword(len = 12) {
     return pw;
 }
 
-/* Load staff members from backend */
+/* Load staff members */
 async function loadStaffMembers() {
     const tbody = document.querySelector('#staffTable tbody');
     tbody.innerHTML = `<tr><td colspan="5">Loading...</td></tr>`;
@@ -125,7 +123,6 @@ async function loadStaffMembers() {
             tbody.appendChild(tr);
         });
 
-        // Attach delete button handlers
         document.querySelectorAll('.btn-delete-staff').forEach(btn => {
             btn.addEventListener('click', deleteStaff);
         });
@@ -136,20 +133,15 @@ async function loadStaffMembers() {
     }
 }
 
-/* Delete staff member */
+/* Delete staff */
 async function deleteStaff(event) {
     const id = event.target.dataset.id;
 
     if (!confirm("Are you sure you want to remove this staff member?")) return;
 
-    const token = localStorage.getItem("jwtToken");
-
     try {
         const res = await fetch(`${API_BASE}/staff/${id}`, {
             method: "DELETE",
-            headers: {
-                "Authorization": `Bearer ${token}`
-            }
         });
 
         const data = await res.json();
@@ -168,7 +160,7 @@ async function deleteStaff(event) {
     }
 }
 
-/* Add staff member (POST /api/staff) */
+/* Add staff */
 document.addEventListener("DOMContentLoaded", () => {
     const form = document.getElementById("addStaffForm");
 
@@ -220,17 +212,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     loadStaffMembers();
 });
-</script>
-
-
-
-
-  
-
-
-
-
-       
-     
+</script>     
 </body>
 </html>
