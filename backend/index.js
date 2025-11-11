@@ -46,7 +46,7 @@ function requireAdmin(req, res, next) {
 app.use("/api", verifyToken);
 
 // ----------------------------
-//   DB Helpers
+//   Helpers
 // ----------------------------
 const query = async (sql, params = []) => {
     const result = await pool.query(sql, params);
@@ -59,6 +59,30 @@ const queryOne = async (sql, params = []) => {
 };
 
 // ----------------------------
+//   Auto Create Admin (runs once)
+// ----------------------------
+async function ensureAdmin() {
+    const existing = await queryOne(
+        `SELECT * FROM users WHERE role = 'admin' LIMIT 1`
+    );
+
+    if (!existing) {
+        console.log(" No admin found. Creating default admin...");
+
+        const hash = bcrypt.hashSync("Admin123", 10);
+
+        await pool.query(
+            `INSERT INTO users (username, email, password, role)
+             VALUES ($1, $2, $3, $4)`,
+            ["Admin", "admin@uwv.com", hash, "admin"]
+        );
+
+        console.log(" Default admin created: admin@uwv.com / Admin123");
+    }
+}
+ensureAdmin();
+
+// ----------------------------
 //   AUTH
 // ----------------------------
 app.post("/api/register", async (req, res) => {
@@ -69,6 +93,7 @@ app.post("/api/register", async (req, res) => {
 
     try {
         const hash = bcrypt.hashSync(password, 10);
+
         const result = await pool.query(
             `INSERT INTO users (username, email, password, role)
              VALUES ($1, $2, $3, $4)
@@ -85,8 +110,7 @@ app.post("/api/register", async (req, res) => {
 app.post("/api/login", async (req, res) => {
     const { email, password } = req.body;
 
-    const rows = await query(`SELECT * FROM users WHERE email = $1`, [email]);
-    const user = rows[0];
+    const user = await queryOne(`SELECT * FROM users WHERE email = $1`, [email]);
 
     if (!user || !bcrypt.compareSync(password, user.password))
         return res.status(401).json({ error: "Invalid credentials" });
@@ -99,17 +123,12 @@ app.post("/api/login", async (req, res) => {
 
     res.json({
         token,
-        user: {
-            id: user.id,
-            username: user.username,
-            email: user.email,
-            role: user.role
-        }
+        user: { id: user.id, username: user.username, email: user.email, role: user.role }
     });
 });
 
 // ----------------------------
-//   SNEAKERS CRUD
+//   Sneakers CRUD
 // ----------------------------
 app.get("/api/sneakers", async (_, res) => {
     const rows = await query(`SELECT * FROM sneakers ORDER BY id DESC`);
@@ -118,7 +137,6 @@ app.get("/api/sneakers", async (_, res) => {
 
 app.post("/api/sneakers", async (req, res) => {
     const { name, image, price = 0, desc = "", qty = 0 } = req.body;
-
     if (!name) return res.status(400).json({ error: "Missing name" });
 
     const result = await query(
@@ -127,7 +145,6 @@ app.post("/api/sneakers", async (req, res) => {
          RETURNING *`,
         [name, image, price, desc, qty]
     );
-
     res.json({ success: true, sneaker: result[0] });
 });
 
@@ -153,12 +170,10 @@ app.delete("/api/sneakers/:id", async (req, res) => {
 });
 
 // ----------------------------
-//   STAFF
+//   Staff
 // ----------------------------
 app.get("/api/staff", async (_, res) => {
-    const rows = await query(
-        `SELECT id, "fullName", email, role FROM staff`
-    );
+    const rows = await query(`SELECT id, "fullName", email, role FROM staff`);
     res.json(rows);
 });
 
@@ -169,7 +184,7 @@ app.delete("/api/staff/:id", async (req, res) => {
 });
 
 // ----------------------------
-//   PURCHASES
+//   Purchases
 // ----------------------------
 app.post("/api/purchase", async (req, res) => {
     const p = req.body;
@@ -194,27 +209,24 @@ app.post("/api/purchase", async (req, res) => {
     res.json({ success: true });
 });
 
-// Get all purchases (admin)
 app.get("/api/purchase", async (_, res) => {
-    const rows = await query(`
-        SELECT * FROM purchases
-        ORDER BY date DESC
-    `);
+    const rows = await query(`SELECT * FROM purchases ORDER BY date DESC`);
     res.json(rows);
 });
 
-// Get purchases for specific user
 app.get("/api/purchase/:id", async (req, res) => {
     const { id } = req.params;
+
     const rows = await query(
         `SELECT * FROM purchases WHERE user_id=$1 ORDER BY date DESC`,
         [id]
     );
+
     res.json(rows);
 });
 
 // ----------------------------
-//   DASHBOARD STATS
+//   Stats
 // ----------------------------
 app.get("/api/stats/users", async (_, res) => {
     const r = await queryOne(`SELECT COUNT(*) AS total FROM users`);
@@ -236,7 +248,6 @@ app.get("/api/stats/revenue", async (_, res) => {
     res.json(r);
 });
 
-// Last 7 days revenue
 app.get("/api/sales/daily", async (_, res) => {
     const rows = await query(`
         SELECT 
@@ -247,12 +258,11 @@ app.get("/api/sales/daily", async (_, res) => {
         GROUP BY date::date
         ORDER BY date::date ASC
     `);
-
     res.json(rows);
 });
 
 // ----------------------------
-//   SERVER START
+//   Start server
 // ----------------------------
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () =>
