@@ -5,8 +5,6 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 import { Pool } from "pg";
-import path from "path";
-import { fileURLToPath } from "url";
 
 dotenv.config();
 
@@ -19,12 +17,10 @@ app.use(bodyParser.json());
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
 
-// PostgreSQL connection
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
 });
-
 
 // ----------------------------
 //   Middleware
@@ -50,7 +46,7 @@ function requireAdmin(req, res, next) {
 app.use("/api", verifyToken);
 
 // ----------------------------
-//   Database Helpers
+//   DB Helpers
 // ----------------------------
 const query = async (sql, params = []) => {
     const result = await pool.query(sql, params);
@@ -63,7 +59,7 @@ const queryOne = async (sql, params = []) => {
 };
 
 // ----------------------------
-//   Auth Routes
+//   AUTH
 // ----------------------------
 app.post("/api/register", async (req, res) => {
     const { username, email, password, role } = req.body;
@@ -113,7 +109,7 @@ app.post("/api/login", async (req, res) => {
 });
 
 // ----------------------------
-//   Sneakers
+//   SNEAKERS CRUD
 // ----------------------------
 app.get("/api/sneakers", async (_, res) => {
     const rows = await query(`SELECT * FROM sneakers ORDER BY id DESC`);
@@ -135,8 +131,29 @@ app.post("/api/sneakers", async (req, res) => {
     res.json({ success: true, sneaker: result[0] });
 });
 
+app.put("/api/sneakers/:id", async (req, res) => {
+    const { id } = req.params;
+    const { name, image, price, qty, desc } = req.body;
+
+    const result = await query(
+        `UPDATE sneakers
+         SET name=$1, image=$2, price=$3, qty=$4, "desc"=$5
+         WHERE id=$6
+         RETURNING *`,
+        [name, image, price, qty, desc, id]
+    );
+
+    res.json(result[0]);
+});
+
+app.delete("/api/sneakers/:id", async (req, res) => {
+    const { id } = req.params;
+    await pool.query(`DELETE FROM sneakers WHERE id = $1`, [id]);
+    res.json({ success: true });
+});
+
 // ----------------------------
-//   Staff
+//   STAFF
 // ----------------------------
 app.get("/api/staff", async (_, res) => {
     const rows = await query(
@@ -145,11 +162,18 @@ app.get("/api/staff", async (_, res) => {
     res.json(rows);
 });
 
+app.delete("/api/staff/:id", async (req, res) => {
+    const { id } = req.params;
+    await pool.query(`DELETE FROM staff WHERE id = $1`, [id]);
+    res.json({ success: true });
+});
+
 // ----------------------------
-//   Purchases
+//   PURCHASES
 // ----------------------------
 app.post("/api/purchase", async (req, res) => {
     const p = req.body;
+
     if (!p || !p.items?.length)
         return res.status(400).json({ error: "Invalid purchase payload" });
 
@@ -170,10 +194,65 @@ app.post("/api/purchase", async (req, res) => {
     res.json({ success: true });
 });
 
-// ----------------------------
+// Get all purchases (admin)
+app.get("/api/purchase", async (_, res) => {
+    const rows = await query(`
+        SELECT * FROM purchases
+        ORDER BY date DESC
+    `);
+    res.json(rows);
+});
+
+// Get purchases for specific user
+app.get("/api/purchase/:id", async (req, res) => {
+    const { id } = req.params;
+    const rows = await query(
+        `SELECT * FROM purchases WHERE user_id=$1 ORDER BY date DESC`,
+        [id]
+    );
+    res.json(rows);
+});
 
 // ----------------------------
-//   Server Start
+//   DASHBOARD STATS
+// ----------------------------
+app.get("/api/stats/users", async (_, res) => {
+    const r = await queryOne(`SELECT COUNT(*) AS total FROM users`);
+    res.json(r);
+});
+
+app.get("/api/stats/staff", async (_, res) => {
+    const r = await queryOne(`SELECT COUNT(*) AS total FROM staff`);
+    res.json(r);
+});
+
+app.get("/api/stats/products", async (_, res) => {
+    const r = await queryOne(`SELECT COUNT(*) AS total FROM sneakers`);
+    res.json(r);
+});
+
+app.get("/api/stats/revenue", async (_, res) => {
+    const r = await queryOne(`SELECT COALESCE(SUM(price),0) AS total FROM purchases`);
+    res.json(r);
+});
+
+// Last 7 days revenue
+app.get("/api/sales/daily", async (_, res) => {
+    const rows = await query(`
+        SELECT 
+            TO_CHAR(date::date, 'Mon DD') AS day,
+            SUM(price) AS total
+        FROM purchases
+        WHERE date >= NOW() - INTERVAL '7 days'
+        GROUP BY date::date
+        ORDER BY date::date ASC
+    `);
+
+    res.json(rows);
+});
+
+// ----------------------------
+//   SERVER START
 // ----------------------------
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () =>
