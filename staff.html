@@ -76,34 +76,26 @@
     <footer>
         <p>© 2025 Urban Walker Vault. All rights reserved.</p>
     </footer>   
-    
+
     <script>
 const API_BASE = "https://urban-walker-vault-1.onrender.com/api";
-
-
-/* Random password generator */
-function generatePassword(len = 12) {
-    const chars =
-        "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%&*?";
-    let pw = "";
-    for (let i = 0; i < len; i++) {
-        pw += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return pw;
-}
 
 /* Load staff members */
 async function loadStaffMembers() {
     const tbody = document.querySelector('#staffTable tbody');
     tbody.innerHTML = `<tr><td colspan="5">Loading...</td></tr>`;
 
-    try {
-        const res = await fetch(`${API_BASE}/staff`);
-        const staffList = await res.json();
+    const token = localStorage.getItem('token');
 
+    try {
+        const res = await fetch(`${API_BASE}/admin/staff`, {
+            headers: { "Authorization": `Bearer ${token}` }
+        });
+
+        const staffList = await res.json();
         tbody.innerHTML = "";
 
-        if (!staffList || staffList.length === 0) {
+        if (!Array.isArray(staffList) || staffList.length === 0) {
             tbody.innerHTML = `<tr><td colspan="5">No staff found.</td></tr>`;
             return;
         }
@@ -112,7 +104,7 @@ async function loadStaffMembers() {
             const tr = document.createElement("tr");
             tr.innerHTML = `
                 <td>${s.id}</td>
-                <td>${s.fullName}</td>
+                <td>${s.name}</td>
                 <td>${s.email}</td>
                 <td>${s.role}</td>
                 <td>
@@ -137,16 +129,17 @@ async function loadStaffMembers() {
 /* Delete staff */
 async function deleteStaff(event) {
     const id = event.target.dataset.id;
-
     if (!confirm("Are you sure you want to remove this staff member?")) return;
 
+    const token = localStorage.getItem('token');
+
     try {
-        const res = await fetch(`${API_BASE}/staff/${id}`, {
+        const res = await fetch(`${API_BASE}/admin/staff/${id}`, {
             method: "DELETE",
+            headers: { "Authorization": `Bearer ${token}` }
         });
 
         const data = await res.json();
-
         if (!res.ok) {
             alert("Failed to delete staff: " + (data.error || ""));
             return;
@@ -168,39 +161,36 @@ document.addEventListener("DOMContentLoaded", () => {
     form.addEventListener("submit", async e => {
         e.preventDefault();
 
-        const fullName = document.getElementById("staffName").value.trim();
+        const name = document.getElementById("staffName").value.trim();
         const email = document.getElementById("staffEmail").value.trim();
-        const role = document.getElementById("staffRole").value;
 
-        if (!fullName || !email) {
+        if (!name || !email) {
             alert("Please fill in all required fields.");
             return;
         }
 
-        const password = generatePassword();
+        const token = localStorage.getItem('token');
 
         try {
-            const res = await fetch(`${API_BASE}/staff`, {
+            const res = await fetch(`${API_BASE}/admin/staff`, {
                 method: "POST",
                 headers: {
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`
                 },
-                body: JSON.stringify({ fullName, email, role, password })
+                body: JSON.stringify({ name, email })
             });
 
             const data = await res.json();
 
-            if (!res.ok) {
+            if (!res.ok || !data.success) {
                 alert("Failed to add staff: " + (data.error || ""));
                 return;
             }
 
-            alert(
-                `Staff member added.\n\n` +
-                `Email: ${email}\n` +
-                `Password: ${password}\n\n` +
-                `Please give these credentials to the staff member.`
-            );
+            // Show generated password returned from backend
+            document.getElementById("generatedPassword").textContent =
+                ` Staff added! Email: ${data.email}, Password: ${data.password}`;
 
             form.reset();
             loadStaffMembers();
@@ -213,6 +203,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     loadStaffMembers();
 });
-</script>     
+</script>
+
+
 </body>
 </html>

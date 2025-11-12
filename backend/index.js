@@ -261,6 +261,18 @@ app.get("/api/sales/daily", async (_, res) => {
     res.json(rows);
 });
 
+// Check if an admin user already exists
+app.get('/api/admin-exists', async (req, res) => {
+  try {
+    const admin = await db.get('SELECT id FROM users WHERE role = ?', ['admin']);
+    res.json({ exists: !!admin });
+  } catch (err) {
+    console.error('Error checking admin existence:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+
 // ----------------------------
 //   Start server
 // ----------------------------

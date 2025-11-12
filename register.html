@@ -63,6 +63,25 @@
     <script>
         document.getElementById("recaptchaToken").value = "temp-bypass-token";
     </script>
+    <script>
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const res = await fetch(`${API_BASE}/admin-exists`);
+    const data = await res.json();
+    if (data.exists) {
+      // Disable admin option if one already exists
+      const adminOption = document.querySelector('#role option[value="admin"]');
+      if (adminOption) {
+        adminOption.disabled = true;
+        adminOption.textContent = "Admin (unavailable)";
+      }
+    }
+  } catch (err) {
+    console.warn('Could not check admin existence:', err);
+  }
+});
+</script>
+
 
 
 </body>
